@@ -191,7 +191,6 @@ fn list_sort() -> Program {
 
 fn main() {
     let mut cfg = MachineState::start(list_sort(), intern("main"), vec![]);
-    // println!("{:#?}", cfg);
     let res = cfg.run();
     println!("{:?}", res);
     println!("{:#?}", cfg);

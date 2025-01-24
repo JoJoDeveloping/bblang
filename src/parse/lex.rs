@@ -175,10 +175,7 @@ impl Lexer {
                     c @ '0'..='9' => Token::NUM(self.lexnum(c)),
                     c if c.is_alphabetic() || c == '_' => {
                         let str = self.lexident(c);
-                        self.idmap
-                            .get(&str)
-                            .copied()
-                            .unwrap_or_else(|| Token::IDENT(str))
+                        self.idmap.get(&str).copied().unwrap_or(Token::IDENT(str))
                     }
                     c => panic!("Unexpected char {c} at input {}", self.index),
                 }),
@@ -190,7 +187,7 @@ impl Lexer {
     #[cfg(test)]
     pub fn tokenize(mut self) -> Vec<Token> {
         let mut res = Vec::new();
-        while let (pos, Some(x)) = self.next_token() {
+        while let (_, Some(x)) = self.next_token() {
             res.push(x);
         }
         res

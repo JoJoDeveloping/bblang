@@ -55,15 +55,15 @@ impl Parser {
         }
     }
 
-    fn error<'a>(&self, err: &'a str) -> ! {
+    fn error(&self, err: &str) -> ! {
         panic!("Parse error at {}: {err}!", self.pos)
     }
 
-    fn tok_error<'a>(&self, err: &'a str, got: Token) -> ! {
+    fn tok_error(&self, err: &str, got: Token) -> ! {
         self.error(&format!("{err}, got {got:?}"))
     }
 
-    fn otok_error<'a>(&self, err: &'a str, got: Option<Token>) -> ! {
+    fn otok_error(&self, err: &str, got: Option<Token>) -> ! {
         match got {
             Some(x) => self.tok_error(err, x),
             None => self.error(&format!("{err}, got EOF")),
@@ -130,7 +130,7 @@ impl Parser {
         let locals = match self.next_token() {
             Some(Token::WITHLOCAL) => self.parse_comma_separated_idents(Token::EQ),
             Some(Token::EQ) => Vec::new(),
-            x => self.otok_error(&format!("expected locals or body"), x),
+            x => self.otok_error("expected locals or body", x),
         };
         let code = self.parse_expr();
         Function {
@@ -263,7 +263,7 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Program {
         let mut functions = HashMap::new();
-        while !self.peek_token().is_none() {
+        while self.peek_token().is_some() {
             let func = self.parse_function();
             let name = func.name;
             if functions.insert(func.name, func).is_some() {

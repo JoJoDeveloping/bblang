@@ -14,8 +14,8 @@ impl ExtcallHandler {
             IStr,
             Box<dyn for<'a> FnMut(&mut Memory, Vec<Value>) -> Result<Value, ()>>,
         > = HashMap::new();
-        calls.insert(intern("putchar"), Box::new(extcalls::putchar));
-        calls.insert(intern("debug"), Box::new(extcalls::debug));
+        calls.insert(intern("putchar"), Box::new(lib::putchar));
+        calls.insert(intern("debug"), Box::new(lib::debug));
         Self { calls }
     }
 
@@ -35,7 +35,7 @@ impl Debug for ExtcallHandler {
     }
 }
 
-mod extcalls {
+mod lib {
     use std::io::Write;
 
     use crate::progs::{ast::Value, memory::Memory};
@@ -48,7 +48,7 @@ mod extcalls {
                 }
                 std::io::stdout()
                     .lock()
-                    .write(&[(*i).try_into().unwrap()])
+                    .write_all(&[(*i).try_into().unwrap()])
                     .unwrap();
                 Ok(Value::Int(0))
             }

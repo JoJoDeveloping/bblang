@@ -92,7 +92,7 @@ impl Debug for IStr {
 
 impl Display for IStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&get_interner().read().unwrap().lookup(*self))
+        f.write_str(get_interner().read().unwrap().lookup(*self))
     }
 }
 
@@ -103,7 +103,7 @@ pub fn intern<S: StrInternable>(s: S) -> IStr {
 pub trait StrInternable: Deref<Target = str> + for<'a> PartialEq<&'a str> + ToString {}
 
 impl StrInternable for String {}
-impl<'a> StrInternable for &'a str {}
+impl StrInternable for &str {}
 
 #[cfg(test)]
 mod test {

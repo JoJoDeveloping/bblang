@@ -153,7 +153,7 @@ impl CallFrame {
 
 impl Statement {
     fn step(&self, cf: &mut CallFrame, mem: &mut Memory) -> Result<(), ()> {
-        Ok(match self {
+        match self {
             Statement::UnOp(res, un_op, operand) => {
                 cf.set_local(*res, operand.eval(cf)?.eval_unop(*un_op)?)
             }
@@ -179,7 +179,8 @@ impl Statement {
                 }
                 mem.dealloc(ptr.0)?;
             }
-        })
+        };
+        Ok(())
     }
 }
 
@@ -260,9 +261,9 @@ impl MachineState {
     }
 
     pub fn run(&mut self) -> Result<Value, ()> {
-        let mut step = 0;
+        let mut _step = 0;
         loop {
-            step += 1;
+            _step += 1;
             return match self.step() {
                 Ok(None) => continue,
                 Ok(Some(x)) => Ok(x),

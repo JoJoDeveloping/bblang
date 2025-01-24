@@ -111,10 +111,6 @@ impl CompilationContext {
         self.blocks[self.current_block].term = Some(t);
     }
 
-    pub fn current_block(&self) -> u32 {
-        self.current_block.try_into().unwrap()
-    }
-
     pub fn switch_block(&mut self, new_block: usize) {
         assert!(new_block < self.blocks.len());
         self.current_block = new_block;
