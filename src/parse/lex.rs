@@ -229,6 +229,7 @@ mod test {
             Token::THEN,
             Token::ELSE,
             Token::DO,
+            Token::DONE,
             Token::WHILE,
             Token::RETURN,
             Token::SET,
