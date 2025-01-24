@@ -8,6 +8,7 @@ use crate::utils::{SwitchToDisplay, string_interner::IStr};
 
 use super::{
     ast::{BinOp, Operand, Pointer, Program, Statement, Terminator, UnOp, Value},
+    errors::{MachineError, MachineErrorKind},
     extcalls::ExtcallHandler,
     memory::Memory,
 };
@@ -48,7 +49,7 @@ impl CallFrame {
 }
 
 impl Terminator {
-    fn step(&self, cf: &mut CallFrame) -> Result<(), ()> {
+    fn step(&self, cf: &mut CallFrame) -> Result<(), MachineError> {
         match self {
             Terminator::Jump(nb) => {
                 cf.bb = *nb;
@@ -78,16 +79,24 @@ impl Value {
         }
     }
 
-    fn eval_unop(self, un_op: UnOp) -> Result<Self, ()> {
+    fn eval_unop(self, un_op: UnOp) -> Result<Self, MachineError> {
         Ok(match (un_op, self) {
             (UnOp::Move, x) => x,
             (UnOp::BitwiseNot, Value::Int(x)) => Value::Int(x.not()),
             (UnOp::Negate, Value::Int(x)) => Value::Int(x.wrapping_neg()),
-            _ => return Err(()),
+            _ => {
+                return Err(MachineError::new(
+                    MachineErrorKind::MismatchedArgs,
+                    format!(
+                        "Unary operator {:?} can not be invoked with {:?}",
+                        un_op, self
+                    ),
+                ));
+            }
         })
     }
 
-    fn eval_binop(self, bin_op: BinOp, other: Self) -> Result<Self, ()> {
+    fn eval_binop(self, bin_op: BinOp, other: Self) -> Result<Self, MachineError> {
         Ok(match (bin_op, self, other) {
             (BinOp::Add, Value::Int(i1), Value::Int(i2)) => Value::Int(i1.wrapping_add(i2)),
             (BinOp::Sub, Value::Int(i1), Value::Int(i2)) => Value::Int(i1.wrapping_sub(i2)),
@@ -99,16 +108,33 @@ impl Value {
             (BinOp::BitwiseOr, Value::Int(i1), Value::Int(i2)) => Value::Int(i1.bitor(i2)),
             (BinOp::BitwiseXor, Value::Int(i1), Value::Int(i2)) => Value::Int(i1.bitxor(i2)),
             (BinOp::Add, Value::Loc(Pointer(blk, off)), Value::Int(i2))
-            | (BinOp::Add, Value::Int(i2), Value::Loc(Pointer(blk, off))) => {
-                Value::Loc(Pointer(blk, off.checked_add_signed(i2).ok_or(())?))
-            }
-            (BinOp::Sub, Value::Loc(Pointer(blk, off)), Value::Int(i2)) => {
-                Value::Loc(Pointer(blk, off.checked_sub_signed(i2).ok_or(())?))
-            }
+            | (BinOp::Add, Value::Int(i2), Value::Loc(Pointer(blk, off))) => Value::Loc(Pointer(
+                blk,
+                off.checked_add_signed(i2).ok_or_else(|| {
+                    MachineError::new(
+                        MachineErrorKind::Overflow,
+                        format!("Overflow when computing {off} + {i2} in pointer add"),
+                    )
+                })?,
+            )),
+            (BinOp::Sub, Value::Loc(Pointer(blk, off)), Value::Int(i2)) => Value::Loc(Pointer(
+                blk,
+                off.checked_sub_signed(i2).ok_or_else(|| {
+                    MachineError::new(
+                        MachineErrorKind::Overflow,
+                        format!("Overflow when computing {off} - {i2} in pointer sub"),
+                    )
+                })?,
+            )),
             (BinOp::Sub, Value::Loc(Pointer(blk1, off1)), Value::Loc(Pointer(blk2, off2)))
                 if blk1 == blk2 =>
             {
-                Value::Int(off1.checked_signed_diff(off2).ok_or(())?)
+                Value::Int(off1.checked_signed_diff(off2).ok_or_else(|| {
+                    MachineError::new(
+                        MachineErrorKind::Overflow,
+                        format!("Overflow when computing {off1} - {off2} in pointer diff"),
+                    )
+                })?)
             }
             (BinOp::Eq, Value::NullPointer, Value::NullPointer) => Value::Int(1),
             (BinOp::Eq, Value::Loc(_), Value::NullPointer)
@@ -126,21 +152,35 @@ impl Value {
             {
                 Value::Int(if off1 <= off2 { 1 } else { 0 })
             }
-            _ => return Err(()),
+            _ => {
+                return Err(MachineError::new(
+                    MachineErrorKind::MismatchedArgs,
+                    format!(
+                        "Binary operator {:?} can not be invoked with {:?} and {:?}",
+                        bin_op, self, other
+                    ),
+                ));
+            }
         })
     }
 
-    fn as_pointer(self) -> Result<Pointer, ()> {
+    fn as_pointer(self) -> Result<Pointer, MachineError> {
         match self {
             Value::Loc(pointer) => Ok(pointer),
-            _ => Err(()),
+            _ => Err(MachineError::new(
+                MachineErrorKind::MismatchedArgs,
+                "expected pointer".to_string(),
+            )),
         }
     }
 
-    fn as_integer(self) -> Result<i32, ()> {
+    fn as_integer(self) -> Result<i32, MachineError> {
         match self {
             Value::Int(i) => Ok(i),
-            _ => Err(()),
+            _ => Err(MachineError::new(
+                MachineErrorKind::MismatchedArgs,
+                "expected integer".to_string(),
+            )),
         }
     }
 }
@@ -152,7 +192,7 @@ impl CallFrame {
 }
 
 impl Statement {
-    fn step(&self, cf: &mut CallFrame, mem: &mut Memory) -> Result<(), ()> {
+    fn step(&self, cf: &mut CallFrame, mem: &mut Memory) -> Result<(), MachineError> {
         match self {
             Statement::UnOp(res, un_op, operand) => {
                 cf.set_local(*res, operand.eval(cf)?.eval_unop(*un_op)?)
@@ -168,14 +208,28 @@ impl Statement {
             }
             Statement::FunCall(_, _, _) => unreachable!(),
             Statement::Alloc(res, operand) => {
-                let len: u32 = operand.eval(cf)?.as_integer()?.try_into().map_err(|_| ())?;
-                let blk = mem.alloc(len).ok_or(())?;
+                let x = operand.eval(cf)?.as_integer()?;
+                let len: u32 = x.try_into().map_err(|_| {
+                    MachineError::new(
+                        MachineErrorKind::Overflow,
+                        format!("requested allocation size {x} is negative"),
+                    )
+                })?;
+                let blk = mem.alloc(len).ok_or_else(|| {
+                    MachineError::new(
+                        MachineErrorKind::MemoryUnsafety,
+                        "out of memory".to_string(),
+                    )
+                })?;
                 cf.set_local(*res, Value::Loc(Pointer(blk, 0)));
             }
             Statement::Free(operand) => {
                 let ptr = operand.eval(cf)?.as_pointer()?;
                 if ptr.1 != 0 {
-                    return Err(());
+                    return Err(MachineError::new(
+                        MachineErrorKind::MemoryUnsafety,
+                        format!("free called with {ptr:?}, which is offset"),
+                    ));
                 }
                 mem.dealloc(ptr.0)?;
             }
@@ -185,23 +239,47 @@ impl Statement {
 }
 
 impl Operand {
-    fn eval(&self, cf: &CallFrame) -> Result<Value, ()> {
+    fn eval(&self, cf: &CallFrame) -> Result<Value, MachineError> {
         match self {
             Operand::Const(value) => Ok(*value),
-            Operand::Local(idx) => cf.locals.get(idx).copied().ok_or(()),
+            Operand::Local(idx) => cf.locals.get(idx).copied().ok_or_else(|| {
+                MachineError::new(
+                    MachineErrorKind::UnboundObject,
+                    format!("local {} does not exist in function {}", *idx, cf.function),
+                )
+            }),
         }
     }
 }
 
 impl MachineState {
-    pub fn step(&mut self) -> Result<Option<Value>, ()> {
+    pub fn step(&mut self) -> Result<Option<Value>, MachineError> {
         let Some(cf) = self.frame.last_mut() else {
-            return Err(());
+            return Err(MachineError::new(
+                MachineErrorKind::UnboundObject,
+                "call frame is empty".to_string(),
+            ));
         };
-        let cur_func = self.code.funcs.get(&cf.function).ok_or(())?;
-        let cur_bb = cur_func.blocks.get(cf.bb).ok_or(())?;
+        let cur_func = self.code.funcs.get(&cf.function).ok_or_else(|| {
+            MachineError::new(
+                MachineErrorKind::UnboundObject,
+                format!("function {} does not exist", cf.function),
+            )
+        })?;
+        let cur_bb = cur_func.blocks.get(cf.bb).ok_or_else(|| {
+            MachineError::new(
+                MachineErrorKind::JumpOutOfBounds,
+                format!("block {} does not exist in function {}", cf.bb, cf.function),
+            )
+        })?;
         if cf.offset > cur_bb.insns.len() {
-            return Err(());
+            return Err(MachineError::new(
+                MachineErrorKind::JumpOutOfBounds,
+                format!(
+                    "block {} in function {} does not have instruction {}",
+                    cf.bb, cf.function, cf.offset
+                ),
+            ));
         } else if cf.offset == cur_bb.insns.len() {
             match cur_bb.term {
                 Terminator::Return(operand) => {
@@ -229,8 +307,8 @@ impl MachineState {
             let stmt = &cur_bb.insns[cf.offset];
             match stmt {
                 Statement::FunCall(idx, fnname, args) => {
-                    let Some(new_func) = self.code.funcs.get(fnname) else {
-                        let args: Result<Vec<_>, ()> = args.iter().map(|x| x.eval(cf)).collect();
+                    let Some(_) = self.code.funcs.get(fnname) else {
+                        let args: Result<Vec<_>, _> = args.iter().map(|x| x.eval(cf)).collect();
                         let args = args?;
                         let rv = self.extcalls.handle(&mut self.memory, *fnname, args)?;
                         if let Some(idx) = idx {
@@ -239,12 +317,14 @@ impl MachineState {
                         cf.offset += 1;
                         return Ok(None);
                     };
-                    if new_func.blocks.is_empty() {
-                        return Err(());
-                    }
                     let mut ncf = CallFrame::new(*fnname, HashMap::new());
                     for (idx, arg) in args.iter().enumerate() {
-                        let idx: u32 = idx.try_into().map_err(|_| ())?;
+                        let idx: u32 = idx.try_into().map_err(|_| {
+                            MachineError::new(
+                                MachineErrorKind::Overflow,
+                                "Function called with too many arguments".to_string(),
+                            )
+                        })?;
                         let arg = arg.eval(cf)?;
                         ncf.locals.insert(idx, arg);
                     }
@@ -260,14 +340,14 @@ impl MachineState {
         Ok(None)
     }
 
-    pub fn run(&mut self) -> Result<Value, ()> {
+    pub fn run(&mut self) -> Result<Value, MachineError> {
         let mut _step = 0;
         loop {
             _step += 1;
             return match self.step() {
                 Ok(None) => continue,
                 Ok(Some(x)) => Ok(x),
-                Err(_) => Err(()),
+                Err(x) => Err(x),
             };
         }
     }

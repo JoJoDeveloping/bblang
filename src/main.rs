@@ -11,6 +11,7 @@ pub mod compile;
 mod examples;
 pub mod parse;
 pub mod progs;
+mod tests;
 pub mod utils;
 
 pub fn parse_and_compile_program(input: &str) -> Program {

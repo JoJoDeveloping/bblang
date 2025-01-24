@@ -100,6 +100,8 @@ pub fn intern<S: StrInternable>(s: S) -> IStr {
     get_interner().write().unwrap().intern(s)
 }
 
+/// This trait in particular says that all inhabitants behave correctly.
+/// In particular, their trait implementations make sense and behave consistend with the thing representing a string.
 pub trait StrInternable: Deref<Target = str> + for<'a> PartialEq<&'a str> + ToString {}
 
 impl StrInternable for String {}

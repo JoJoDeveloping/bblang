@@ -123,7 +123,7 @@ impl Lexer {
         res.push(firstchar);
         while !self.eof() {
             let cc = self.current_char();
-            if cc.is_alphanumeric() || cc == '_' {
+            if cc.is_alphanumeric() || cc == '_' || cc == '\'' {
                 res.push(cc);
                 self.next_char();
             } else {
@@ -146,6 +146,24 @@ impl Lexer {
                 self.pos(),
                 Some(match self.next_char() {
                     ' ' | '\n' | '\t' | '\r' => continue,
+                    '/' if !self.eof() && self.current_char() == '/' => {
+                        self.next_char();
+                        while !self.eof() && self.next_char() != '\n' {}
+                        continue;
+                    }
+                    '/' if !self.eof() && self.current_char() == '*' => {
+                        self.next_char();
+                        loop {
+                            while !self.eof() && self.next_char() != '*' {}
+                            if self.eof() {
+                                panic!("Unterminated comment at EOF at {}", self.index)
+                            }
+                            if self.next_char() == '/' {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
                     '(' => Token::LPAR,
                     ')' => Token::RPAR,
                     ',' => Token::COMMA,
@@ -244,6 +262,18 @@ mod test {
             Token::IDENT(intern("bar")),
             Token::IDENT(intern("baz")),
             Token::IDENT(intern("FOO_BAR_42_baz")),
+        ])
+    }
+
+    #[test]
+    fn test_comments() {
+        let data = "foo //bar baz 42 /* aa */ bb \n foo/*  */bar baz";
+        let res = Lexer::new(data.chars().collect()).tokenize();
+        assert_eq!(res, [
+            Token::IDENT(intern("foo")),
+            Token::IDENT(intern("foo")),
+            Token::IDENT(intern("bar")),
+            Token::IDENT(intern("baz"))
         ])
     }
 }

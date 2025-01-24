@@ -5,7 +5,10 @@ use std::{
 
 use crate::utils::SwitchToDisplay;
 
-use super::ast::{Pointer, Value};
+use super::{
+    ast::{Pointer, Value},
+    errors::{MachineError, MachineErrorKind},
+};
 
 #[derive(Debug)]
 pub struct Allocation {
@@ -61,10 +64,13 @@ impl Memory {
         }
     }
 
-    pub fn dealloc(&mut self, blk: u32) -> Result<(), ()> {
+    pub fn dealloc(&mut self, blk: u32) -> Result<(), MachineError> {
         match self.allocs.remove(&blk) {
             Some(_) => Ok(()),
-            None => Err(()),
+            None => Err(MachineError::new(
+                MachineErrorKind::MemoryUnsafety,
+                format!("double free for ({blk}, 0)"),
+            )),
         }
     }
 
@@ -88,23 +94,46 @@ impl Memory {
         }
     }
 
-    pub fn load(&mut self, off: Pointer) -> Result<Value, ()> {
-        self.allocs
+    pub fn load(&mut self, off: Pointer) -> Result<Value, MachineError> {
+        let data = &self
+            .allocs
             .get(&off.0)
-            .ok_or(())?
-            .data
-            .get(off.1 as usize)
-            .copied()
-            .ok_or(())
+            .ok_or_else(|| {
+                MachineError::new(
+                    MachineErrorKind::MemoryUnsafety,
+                    format!("use-after-free for {:?}", off),
+                )
+            })?
+            .data;
+        let size = data.len();
+        data.get(off.1 as usize).copied().ok_or_else(|| {
+            MachineError::new(
+                MachineErrorKind::MemoryUnsafety,
+                format!("out-of-bounds for {:?} (allocation size is {size}", off),
+            )
+        })
     }
 
-    pub fn store(&mut self, off: Pointer, new_data: Value) -> Result<(), ()> {
-        let data = &mut self.allocs.get_mut(&off.0).ok_or(())?.data;
+    pub fn store(&mut self, off: Pointer, new_data: Value) -> Result<(), MachineError> {
+        let data = &mut self
+            .allocs
+            .get_mut(&off.0)
+            .ok_or_else(|| {
+                MachineError::new(
+                    MachineErrorKind::MemoryUnsafety,
+                    format!("use-after-free for {:?}", off),
+                )
+            })?
+            .data;
+        let size = data.len();
         if (off.1 as usize) < data.len() {
             data[off.1 as usize] = new_data;
             Ok(())
         } else {
-            Err(())
+            Err(MachineError::new(
+                MachineErrorKind::MemoryUnsafety,
+                format!("out-of-bounds for {:?} (allocation size is {size}", off),
+            ))
         }
     }
 }
