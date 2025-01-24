@@ -1,27 +1,31 @@
 use std::collections::HashMap;
 
 use crate::{
+    parse::lex::Position,
     progs::ast::{BinOp, Value},
     utils::string_interner::IStr,
 };
+
+pub type Span = (Position, Position);
+pub type BoxExpr = Box<(Expr, Span)>;
 
 #[derive(Debug)]
 pub enum Expr {
     Const(Value),
     ReadLocal(IStr),
-    SetLocal(IStr, Box<Expr>),
-    Negate(Box<Expr>),
-    BitNot(Box<Expr>),
-    Load(Box<Expr>),
-    Alloc(Box<Expr>),
-    Free(Box<Expr>),
-    Store(Box<Expr>, Box<Expr>),
-    BinOp(Box<Expr>, BinOp, Box<Expr>),
-    Call(IStr, Vec<Box<Expr>>),
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
-    While(Box<Expr>, Box<Expr>),
-    Seq(Box<Expr>, Box<Expr>),
-    Return(Box<Expr>),
+    SetLocal(IStr, BoxExpr),
+    Negate(BoxExpr),
+    BitNot(BoxExpr),
+    Load(BoxExpr),
+    Alloc(BoxExpr),
+    Free(BoxExpr),
+    Store(BoxExpr, BoxExpr),
+    BinOp(BoxExpr, BinOp, BoxExpr),
+    Call(IStr, Vec<BoxExpr>),
+    If(BoxExpr, BoxExpr, BoxExpr),
+    While(BoxExpr, BoxExpr),
+    Seq(BoxExpr, BoxExpr),
+    Return(BoxExpr),
 }
 
 #[derive(Debug)]
@@ -29,7 +33,8 @@ pub struct Function {
     pub name: IStr,
     pub args: Vec<IStr>,
     pub locals: Vec<IStr>,
-    pub code: Box<Expr>,
+    pub code: BoxExpr,
+    pub span: Span,
 }
 
 #[derive(Debug)]

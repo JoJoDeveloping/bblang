@@ -14,16 +14,16 @@ pub mod progs;
 mod tests;
 pub mod utils;
 
-pub fn parse_and_compile_program(input: &str) -> Program {
-    parse_program(input).compile()
+pub fn parse_and_compile_program(path: &str, input: &str) -> Program {
+    parse_program(path, input).compile()
 }
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    let prog = parse_and_compile_program(&read_file(&args[1]));
+    let prog = parse_and_compile_program(&args[1], &read_file(&args[1]));
 
     let mut cfg = MachineState::start(prog, intern("main"), vec![]);
     let res = cfg.run();
     println!("{:?}", res);
-    println!("{:#?}", cfg);
+    println!("{}", cfg);
 }

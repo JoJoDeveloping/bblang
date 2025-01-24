@@ -13,17 +13,11 @@ pub enum MachineErrorKind {
 pub struct MachineError {
     kind: MachineErrorKind,
     details: String,
-    #[allow(unused)]
-    origin: (),
 }
 
 impl MachineError {
     pub fn new(kind: MachineErrorKind, details: String) -> Self {
-        Self {
-            kind,
-            details,
-            origin: (),
-        }
+        Self { kind, details }
     }
 }
 

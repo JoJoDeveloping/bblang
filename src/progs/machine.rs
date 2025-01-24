@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{BitAnd, BitOr, BitXor, Not},
 };
 
@@ -364,5 +364,38 @@ impl MachineState {
             code,
             extcalls: ExtcallHandler::new(),
         }
+    }
+}
+
+impl Display for MachineState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Stack trace:\n")?;
+        for (idx, frame) in self.frame.iter().enumerate() {
+            write!(
+                f,
+                "{idx:>5}: {} ({}: {})\n",
+                frame.function, frame.bb, frame.offset
+            )?;
+            let Some(func) = self.code.funcs.get(&frame.function) else {
+                write!(f, "      function does not exist!\n ")?;
+                continue;
+            };
+            write!(f, "         locals:")?;
+            for (idx, name) in func.debug_info.local_names.iter() {
+                write!(f, " {name}=")?;
+                match frame.locals.get(idx) {
+                    Some(x) => write!(f, "{x:?} ")?,
+                    None => write!(f, "? ")?,
+                };
+            }
+            write!(f, "\n         position: ")?;
+            match func.debug_info.data.get(&(frame.bb, frame.offset)) {
+                Some((p1, p2)) => write!(f, "{p1} to {p2}")?,
+                None => write!(f, "?")?,
+            }
+            write!(f, "\n")?;
+        }
+        write!(f, "Memory dump: \n{:#}", self.memory)?;
+        Ok(())
     }
 }

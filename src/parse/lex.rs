@@ -2,15 +2,26 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::utils::string_interner::{IStr, intern};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Position {
+    file: IStr,
     line: usize,
     col: usize,
 }
 
+impl Default for Position {
+    fn default() -> Self {
+        Self {
+            file: intern("internal.sl"),
+            line: Default::default(),
+            col: Default::default(),
+        }
+    }
+}
+
 impl Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line, self.col)
+        write!(f, "{}:{}:{}", self.file, self.line, self.col)
     }
 }
 
@@ -51,6 +62,7 @@ pub enum Token {
 }
 
 pub struct Lexer {
+    filename: IStr,
     data: Vec<char>,
     index: usize,
     idmap: HashMap<IStr, Token>,
@@ -59,7 +71,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(data: Vec<char>) -> Self {
+    pub fn new(filename: IStr, data: Vec<char>) -> Self {
         let mut idmap = HashMap::new();
         idmap.insert(intern("fun"), Token::FUN);
         idmap.insert(intern("locals"), Token::WITHLOCAL);
@@ -75,6 +87,7 @@ impl Lexer {
         idmap.insert(intern("alloc"), Token::ALLOC);
         idmap.insert(intern("free"), Token::FREE);
         Self {
+            filename,
             data,
             idmap,
             index: 0,
@@ -135,12 +148,13 @@ impl Lexer {
 
     fn pos(&self) -> Position {
         Position {
+            file: self.filename,
             line: self.line,
             col: self.col,
         }
     }
 
-    pub fn next_token(&mut self) -> (Position, Option<Token>) {
+    pub fn next_token(&mut self) -> (Position, Option<Token>, Position) {
         while !self.eof() {
             return (
                 self.pos(),
@@ -197,15 +211,16 @@ impl Lexer {
                     }
                     c => panic!("Unexpected char {c} at input {}", self.index),
                 }),
+                self.pos(),
             );
         }
-        (self.pos(), None)
+        (self.pos(), None, self.pos())
     }
 
     #[cfg(test)]
     pub fn tokenize(mut self) -> Vec<Token> {
         let mut res = Vec::new();
-        while let (_, Some(x)) = self.next_token() {
+        while let (_, Some(x), _) = self.next_token() {
             res.push(x);
         }
         res
@@ -221,7 +236,7 @@ mod test {
     #[test]
     fn test_all_tokens() {
         let data = "(),+-*!~^&|;= == < <= <- fun locals nullptr if then else do done while return set alloc free 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
-        let res = Lexer::new(data.chars().collect()).tokenize();
+        let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
         assert_eq!(res, [
             Token::LPAR,
             Token::RPAR,
@@ -268,7 +283,7 @@ mod test {
     #[test]
     fn test_comments() {
         let data = "foo //bar baz 42 /* aa */ bb \n foo/*  */bar baz";
-        let res = Lexer::new(data.chars().collect()).tokenize();
+        let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
         assert_eq!(res, [
             Token::IDENT(intern("foo")),
             Token::IDENT(intern("foo")),

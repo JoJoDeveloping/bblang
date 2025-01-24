@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use crate::utils::string_interner::IStr;
+use crate::{compile::highast::Span, utils::string_interner::IStr};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Debug)]
 pub struct Pointer(pub u32, pub u32);
@@ -66,9 +66,16 @@ pub struct BasicBlock {
 pub struct Function {
     pub name: IStr,
     pub blocks: Vec<BasicBlock>,
+    pub debug_info: DebugInfo,
 }
 
 #[derive(Debug)]
 pub struct Program {
     pub funcs: HashMap<IStr, Function>,
+}
+
+#[derive(Debug, Default)]
+pub struct DebugInfo {
+    pub data: HashMap<(usize, usize), Span>,
+    pub local_names: BTreeMap<u32, IStr>,
 }

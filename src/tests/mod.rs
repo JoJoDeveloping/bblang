@@ -7,7 +7,7 @@ use crate::{
 
 #[cfg(test)]
 fn run_file_assert_output(file: &str, output: Value) {
-    let prog = parse_and_compile_program(&read_file(file));
+    let prog = parse_and_compile_program("internal.sl", &read_file(file));
 
     let mut cfg = MachineState::start(prog, intern("main"), vec![]);
     let res = cfg.run();

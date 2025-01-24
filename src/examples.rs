@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    compile::highast::{self, Expr},
+    compile::highast::{self, BoxExpr, Expr},
     progs::ast::*,
     utils::string_interner::intern,
 };
@@ -46,8 +46,13 @@ fn fib_rec_prog() -> Program {
                 term: Terminator::Return(Operand::Local(0)),
             },
         ],
+        debug_info: Default::default(),
     });
     Program { funcs }
+}
+
+fn b(e: Expr) -> BoxExpr {
+    Box::new((e, (Default::default(), Default::default())))
 }
 
 #[allow(unused)]
@@ -59,27 +64,28 @@ fn fib_rec_prog_compiled() -> Program {
             name: intern("fib"),
             args: vec![intern("n")],
             locals: Vec::new(),
-            code: Box::new(Expr::If(
-                Box::new(Expr::BinOp(
-                    Box::new(Expr::ReadLocal(intern("n"))),
+            code: b(Expr::If(
+                b(Expr::BinOp(
+                    b(Expr::ReadLocal(intern("n"))),
                     BinOp::Lt,
-                    Box::new(Expr::Const(Value::Int(2))),
+                    b(Expr::Const(Value::Int(2))),
                 )),
-                Box::new(Expr::ReadLocal(intern("n"))),
-                Box::new(Expr::BinOp(
-                    Box::new(Expr::Call(intern("fib"), vec![Box::new(Expr::BinOp(
-                        Box::new(Expr::ReadLocal(intern("n"))),
+                b(Expr::ReadLocal(intern("n"))),
+                b(Expr::BinOp(
+                    b(Expr::Call(intern("fib"), vec![b(Expr::BinOp(
+                        b(Expr::ReadLocal(intern("n"))),
                         BinOp::Sub,
-                        Box::new(Expr::Const(Value::Int(1))),
+                        b(Expr::Const(Value::Int(1))),
                     ))])),
                     BinOp::Add,
-                    Box::new(Expr::Call(intern("fib"), vec![Box::new(Expr::BinOp(
-                        Box::new(Expr::ReadLocal(intern("n"))),
+                    b(Expr::Call(intern("fib"), vec![b(Expr::BinOp(
+                        b(Expr::ReadLocal(intern("n"))),
                         BinOp::Sub,
-                        Box::new(Expr::Const(Value::Int(2))),
+                        b(Expr::Const(Value::Int(2))),
                     ))])),
                 )),
             )),
+            span: Default::default(),
         }
         .compile(),
     );
