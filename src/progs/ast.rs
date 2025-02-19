@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{compile::highast::Span, utils::string_interner::IStr};
+use crate::{parse::Span, utils::string_interner::IStr};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Debug)]
 pub struct Pointer(pub u32, pub u32);

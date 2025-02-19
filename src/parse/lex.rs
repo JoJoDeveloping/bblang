@@ -44,6 +44,10 @@ pub enum Token {
     LT,
     LTEQ,
     LTMINUS,
+    MINUSGT,
+    EQGT,
+    COLONCOLON,
+    COLON,
     FUN,
     WITHLOCAL,
     NULLPTR,
@@ -57,6 +61,15 @@ pub enum Token {
     SET,
     ALLOC,
     FREE,
+    MATCH,
+    WITH,
+    END,
+    INDUCTIVE,
+    SFUN,
+    LET,
+    IN,
+    INT,
+    PTR,
     IDENT(IStr),
     NUM(i32),
 }
@@ -86,6 +99,15 @@ impl Lexer {
         idmap.insert(intern("set"), Token::SET);
         idmap.insert(intern("alloc"), Token::ALLOC);
         idmap.insert(intern("free"), Token::FREE);
+        idmap.insert(intern("match"), Token::MATCH);
+        idmap.insert(intern("with"), Token::WITH);
+        idmap.insert(intern("end"), Token::END);
+        idmap.insert(intern("inductive"), Token::INDUCTIVE);
+        idmap.insert(intern("sfun"), Token::SFUN);
+        idmap.insert(intern("let"), Token::LET);
+        idmap.insert(intern("in"), Token::IN);
+        idmap.insert(intern("int"), Token::INT);
+        idmap.insert(intern("ptr"), Token::PTR);
         Self {
             filename,
             data,
@@ -182,7 +204,6 @@ impl Lexer {
                     ')' => Token::RPAR,
                     ',' => Token::COMMA,
                     '+' => Token::PLUS,
-                    '-' => Token::MINUS,
                     '*' => Token::STAR,
                     '!' => Token::BANG,
                     '~' => Token::TILDE,
@@ -194,6 +215,10 @@ impl Lexer {
                         self.next_char();
                         Token::EQEQ
                     }
+                    '=' if !self.eof() && self.current_char() == '>' => {
+                        self.next_char();
+                        Token::EQGT
+                    }
                     '=' => Token::EQ,
                     '<' if !self.eof() && self.current_char() == '=' => {
                         self.next_char();
@@ -204,6 +229,16 @@ impl Lexer {
                         Token::LTMINUS
                     }
                     '<' => Token::LT,
+                    '-' if !self.eof() && self.current_char() == '>' => {
+                        self.next_char();
+                        Token::MINUSGT
+                    }
+                    '-' => Token::MINUS,
+                    ':' if !self.eof() && self.current_char() == ':' => {
+                        self.next_char();
+                        Token::COLONCOLON
+                    }
+                    ':' => Token::COLON,
                     c @ '0'..='9' => Token::NUM(self.lexnum(c)),
                     c if c.is_alphabetic() || c == '_' => {
                         let str = self.lexident(c);
@@ -235,7 +270,7 @@ mod test {
 
     #[test]
     fn test_all_tokens() {
-        let data = "(),+-*!~^&|;= == < <= <- fun locals nullptr if then else do done while return set alloc free 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
+        let data = "(),+-*!~^&|;= == < <= <- -> => :: : fun locals nullptr if then else do done while return set alloc free match with end inductive sfun let in int ptr 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
         let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
         assert_eq!(res, [
             Token::LPAR,
@@ -255,6 +290,10 @@ mod test {
             Token::LT,
             Token::LTEQ,
             Token::LTMINUS,
+            Token::MINUSGT,
+            Token::EQGT,
+            Token::COLONCOLON,
+            Token::COLON,
             Token::FUN,
             Token::WITHLOCAL,
             Token::NULLPTR,
@@ -268,6 +307,15 @@ mod test {
             Token::SET,
             Token::ALLOC,
             Token::FREE,
+            Token::MATCH,
+            Token::WITH,
+            Token::END,
+            Token::INDUCTIVE,
+            Token::SFUN,
+            Token::LET,
+            Token::IN,
+            Token::INT,
+            Token::PTR,
             Token::NUM(0),
             Token::NUM(1),
             Token::NUM(2),

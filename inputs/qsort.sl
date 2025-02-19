@@ -2,17 +2,40 @@
 pred List(ptr) : intlist = if ptr then Cons(AsInt(Owned(ptr)), List(Owned(ptr + 1))) else Nil()
 */
 
-
+/*
+spec: nil() =
+    ensure (List(result) == Nil())
+*/
 fun nil() = nullptr
 
-fun cons(hd, tl) locals ptr =
-    set ptr = alloc 2;
-    ptr <- hd;
-    ptr + 1 <- tl;
-    ptr
+/*
+spec: cons(hd, tl) =
+    let tl = List(tl);
+    ensure (List(result) == Cons(hd, tl))
+*/
+fun cons(hd, tl) locals lc =
+    set lc = alloc 2;
+    lc <- hd;
+    lc + 1 <- tl;
+    lc
 
+
+/*
+spec: empty(lst) =
+    let v = List(lst);
+    ensure result <-> v == Nil();
+    ensure v == List(lst) //the list remains unchanged
+*/
 fun empty(lst) = lst == nullptr
 
+/*
+spec: head(lst) =
+    let v = List(lst);
+    match v with Nil() => assert False | Cons(hd, tl) =>
+        ensure result == hd;
+        ensure v == List(lst) //the list remains unchanged
+    end
+*/
 fun head(lst) = *lst
 
 fun tail(lst) = *tailptr(lst)
@@ -44,9 +67,7 @@ fun qsort(lst) locals pivot, left, right, rest, tmp =
     done;
     set left = qsort(left);
     set right = qsort(right);
-    set tmp = cons(pivot, right);
-    set tmp = app(left, tmp);
-    tmp
+    app(left, cons(pivot, right))
 
 fun printall(lst) locals tmp =
     while !empty(lst) do

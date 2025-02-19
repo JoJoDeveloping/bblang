@@ -11,6 +11,7 @@ pub mod compile;
 mod examples;
 pub mod parse;
 pub mod progs;
+pub mod specs;
 mod tests;
 pub mod utils;
 

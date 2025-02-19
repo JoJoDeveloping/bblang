@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    parse::lex::Position,
+    parse::Span,
     progs::ast::{BinOp, Value},
     utils::string_interner::IStr,
 };
 
-pub type Span = (Position, Position);
 pub type BoxExpr = Box<(Expr, Span)>;
 
 #[derive(Debug)]

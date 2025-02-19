@@ -1,11 +1,12 @@
 use std::collections::{BTreeSet, HashMap};
 
 use crate::{
+    parse::Span,
     progs::ast::{self, BasicBlock, DebugInfo, Operand, Statement, Terminator},
     utils::string_interner::IStr,
 };
 
-use super::highast::{Expr, Function, Program, Span};
+use super::highast::{Expr, Function, Program};
 
 struct IncompleteBB {
     insns: Vec<ast::Statement>,
