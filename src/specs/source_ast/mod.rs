@@ -55,9 +55,9 @@ pub enum SourceExpr {
 }
 
 pub struct SourceMatchArm {
-    constr: IStr,
-    var: Vec<IStr>,
-    expr: Box<SourceExpr>,
+    pub constr: IStr,
+    pub vars: Vec<IStr>,
+    pub expr: Box<SourceExpr>,
 }
 
 pub struct SourceConstDef {

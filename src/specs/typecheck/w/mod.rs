@@ -153,11 +153,11 @@ impl GlobalCtx {
             subst: GlobalSubst::new(),
         }
     }
-    pub fn get_inductive(&self, name: IStr) -> Option<&Inductive> {
+    pub fn get_inductive(&self, name: IStr) -> Option<Rc<Inductive>> {
         let InductiveDef::Defined(idx, off) = *self.type_locations.get(&name)? else {
             return None;
         };
-        Some(&self.type_defs[idx].0[off])
+        Some(self.type_defs[idx].0[off].clone())
     }
     pub fn get_inductive_arity(&self, name: IStr) -> Option<usize> {
         match *self.type_locations.get(&name)? {

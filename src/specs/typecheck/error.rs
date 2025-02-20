@@ -22,6 +22,8 @@ pub enum TypeError {
     UndefinedConstr(IStr),
     IllegalGenericsInstantiation(Generics, usize),
     IllegalConstructorApplication(IStr, IStr, usize),
+    MatchNotOnInductive(Rc<Type>),
+    MatchError(),
 }
 
 pub type Result<T> = core::result::Result<T, TypeError>;

@@ -28,7 +28,7 @@ pub struct Constructor {
     pub args: Vec<Rc<Type>>,
 }
 
-pub struct Inductives(pub Vec<Inductive>);
+pub struct Inductives(pub Vec<Rc<Inductive>>);
 
 #[derive(Clone, Debug)]
 pub enum Type {

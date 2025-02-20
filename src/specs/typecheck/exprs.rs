@@ -1,8 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use crate::specs::{
     checked_ast::{
-        expr::Expr,
+        expr::{Expr, MatchArm},
         types::{Generics, PolyType, Type},
     },
     source_ast::SourceExpr,
@@ -116,20 +119,18 @@ impl<'a> LocalCtx<'a> {
                 let ctr = ind
                     .constrs
                     .get(&ctrname)
-                    .ok_or_else(|| (TypeError::UndefinedConstr(ctrname)))?
-                    .clone();
+                    .ok_or_else(|| (TypeError::UndefinedConstr(ctrname)))?;
                 let ctr: Vec<_> = ctr
                     .args
                     .iter()
                     .map(|x| globals.subst.resolve_fully(x))
                     .collect();
-                let data: Vec<_> = ind.generics.names.iter().map(|(x, _)| *x).collect();
                 let res_ty = ind.uninstantiated_type();
                 let (data, instanti) = match spec {
                     None => {
                         let mut instanti = Vec::new();
                         let mut substi = HashMap::new();
-                        for x in data {
+                        for x in ind.generics.names.iter().map(|(x, _)| *x) {
                             let ty = Rc::new(Type::TypeVar(globals.name_generator.next()));
                             instanti.push(ty.clone());
                             substi.insert(x, ty);
@@ -137,7 +138,7 @@ impl<'a> LocalCtx<'a> {
                         (substi, instanti)
                     }
                     Some(vec) => {
-                        if vec.len() != data.len() {
+                        if vec.len() != ind.generics.names.len() {
                             return Err(TypeError::IllegalGenericsInstantiation(
                                 ind.generics.clone(),
                                 vec.len(),
@@ -145,7 +146,13 @@ impl<'a> LocalCtx<'a> {
                         }
                         let mut substi = HashMap::new();
                         let mut instanti = Vec::new();
-                        for (x, styo) in data.into_iter().zip(vec.into_iter()) {
+                        for (x, styo) in ind
+                            .generics
+                            .names
+                            .iter()
+                            .map(|(x, _)| *x)
+                            .zip(vec.into_iter())
+                        {
                             let ty = match styo {
                                 Some(ty) => self.check_type(globals, *ty)?,
                                 None => Rc::new(Type::TypeVar(globals.name_generator.next())),
@@ -173,7 +180,130 @@ impl<'a> LocalCtx<'a> {
                 }
                 (res_ty, Expr::IndConst(indname, ctrname, instanti, new_args))
             }
-            SourceExpr::IndMatch(source_expr, istr, _hash_map) => todo!(),
+            SourceExpr::IndMatch(discriminee, inductive_ty, arms) => {
+                let res_ty = Rc::new(Type::TypeVar(globals.name_generator.next()));
+                let (match_ty, discriminee) = self.check_expr(globals, *discriminee)?;
+                let (ind, substi) = match inductive_ty {
+                    Some(indname) => {
+                        let ind = globals
+                            .get_inductive(indname)
+                            .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
+                        let res_ty = ind.uninstantiated_type();
+                        let mut substi = HashMap::new();
+                        for x in ind
+                            .generics
+                            .names
+                            .iter()
+                            .map(|(x, _)| *x)
+                            .collect::<Vec<_>>()
+                        {
+                            let ty = Rc::new(Type::TypeVar(globals.name_generator.next()));
+                            substi.insert(x, ty);
+                        }
+                        let res_ty = res_ty.subst(&substi);
+                        globals.subst.unify(match_ty, res_ty)?;
+                        (ind, substi)
+                    }
+                    None => {
+                        let match_ty = globals.subst.resolve_fully(&match_ty);
+                        if let Type::Inductive(indname, presubsti) = match_ty {
+                            let ind = globals
+                                .get_inductive(indname)
+                                .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
+                            let substi = ind
+                                .generics
+                                .names
+                                .iter()
+                                .map(|(x, _)| *x)
+                                .zip(presubsti.into_iter())
+                                .collect::<HashMap<_, _>>();
+
+                            (ind, substi)
+                        } else {
+                            return Err(TypeError::MatchNotOnInductive(Rc::new(match_ty)));
+                        }
+                    }
+                };
+                if arms.len() != ind.constrs.len() {
+                    return Err(TypeError::MatchError());
+                }
+                let mut new_arms = HashMap::new();
+                for (constr, arm) in arms {
+                    assert_eq!(arm.constr, constr);
+                    let constr = ind
+                        .constrs
+                        .get(&constr)
+                        .ok_or_else(|| (TypeError::MatchError()))?;
+                    if constr.args.len() != arm.vars.len() {
+                        return Err(TypeError::MatchError());
+                    }
+                    let mut envsubst = HashMap::new();
+                    for (var, arg) in arm.vars.iter().zip(constr.args.iter()) {
+                        let argty = globals.subst.resolve_fully(&**arg).subst(&substi);
+                        if let Some(_) = envsubst.insert(*var, PolyType::without_binders(argty)) {
+                            return Err(TypeError::MatchError());
+                        }
+                    }
+                    let scope = self.push_vars(envsubst);
+                    let (resty2, expr) = scope.check_expr(globals, *arm.expr)?;
+                    globals.subst.unify(resty2, res_ty.clone())?;
+                    new_arms.insert(arm.constr, MatchArm {
+                        constr: arm.constr,
+                        vars: arm.vars,
+                        expr: Box::new(expr),
+                    });
+                }
+                (
+                    res_ty,
+                    Expr::IndMatch(Box::new(discriminee), ind.name, new_arms),
+                )
+            }
         })
+    }
+}
+
+impl GlobalCtx {
+    pub fn resolve_expr_fully(&self, expr: &mut Expr, allowed_free_vars: &HashSet<TypeVar>) {
+        match expr {
+            Expr::Var(istr) => (),
+            Expr::Lambda(_, _, ty, body) => {
+                self.resolve_ty_fully(ty, allowed_free_vars);
+                self.resolve_expr_fully(body, allowed_free_vars);
+            }
+            Expr::App(expr1, expr2) => {
+                self.resolve_expr_fully(expr1, allowed_free_vars);
+                self.resolve_expr_fully(expr2, allowed_free_vars);
+            }
+            Expr::Let(_, ty, expr1, expr2) => {
+                let mut new_fvs = allowed_free_vars.clone();
+                ty.binders.names.iter().for_each(|(x, _)| {
+                    new_fvs.insert(*x);
+                });
+                self.resolve_ty_fully(&mut ty.ty, &new_fvs);
+                self.resolve_expr_fully(expr1, &new_fvs);
+                self.resolve_expr_fully(expr2, allowed_free_vars);
+            }
+            Expr::IndConst(_, _, tys, exprs) => {
+                exprs
+                    .iter_mut()
+                    .for_each(|e| self.resolve_expr_fully(e, allowed_free_vars));
+                tys.iter_mut()
+                    .for_each(|t| self.resolve_ty_fully(t, allowed_free_vars));
+            }
+            Expr::IndMatch(_, _, rows) => {
+                rows.iter_mut().for_each(|(_, arm)| {
+                    self.resolve_expr_fully(&mut *arm.expr, allowed_free_vars)
+                });
+            }
+        }
+    }
+
+    pub fn resolve_ty_fully(&self, ty: &mut Rc<Type>, allowed_free_vars: &HashSet<TypeVar>) {
+        for ele in (*ty).fvs(&self.subst) {
+            if !allowed_free_vars.contains(&ele) {
+                eprintln!("Type variable {ele:?} is free/unresolved!");
+            }
+        }
+        *ty = Rc::new(self.subst.resolve_fully(&*ty))
     }
 }

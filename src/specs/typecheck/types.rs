@@ -40,11 +40,11 @@ impl GlobalCtx {
                         return Err(TypeError::DuplicateConstructor(inductive.name, cn));
                     }
                 }
-                res.0.push(Inductive {
+                res.0.push(Rc::new(Inductive {
                     generics,
                     name: inductive.name,
                     constrs,
-                });
+                }));
             }
         }
         let idx = self.type_defs.len();

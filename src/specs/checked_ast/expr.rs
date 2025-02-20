@@ -13,10 +13,10 @@ pub enum Expr {
     IndMatch(Box<Expr>, IStr, HashMap<IStr, MatchArm>),
 }
 
-struct MatchArm {
-    constr: IStr,
-    var: Vec<IStr>,
-    expr: Box<Expr>,
+pub struct MatchArm {
+    pub constr: IStr,
+    pub vars: Vec<IStr>,
+    pub expr: Box<Expr>,
 }
 
 struct ConstDef {
