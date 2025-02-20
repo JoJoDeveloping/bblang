@@ -1,8 +1,10 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::specs::{
-    checked_ast::types::{Generics, Inductive, Inductives, PolyType, Type},
-    source_ast::{SourceGenerics, SourceInductive, SourceInductives, SourceType},
+    checked_ast::types::{Constructor, Generics, Inductive, Inductives, PolyType, Type},
+    source_ast::{
+        SourceConstructor, SourceGenerics, SourceInductive, SourceInductives, SourceType,
+    },
     typecheck::w::InductiveDef,
 };
 
@@ -30,8 +32,11 @@ impl GlobalCtx {
             for inductive in def.0 {
                 let (generics, scope) = es.enter_generics(self, inductive.generics)?;
                 let mut constrs = HashMap::new();
-                for (cn, ty) in inductive.constrs {
-                    if constrs.insert(cn, scope.check_type(self, ty)?).is_some() {
+                for (cn, ctr) in inductive.constrs {
+                    if constrs
+                        .insert(cn, scope.check_constructor(self, ctr)?)
+                        .is_some()
+                    {
                         return Err(TypeError::DuplicateConstructor(inductive.name, cn));
                     }
                 }
@@ -53,6 +58,18 @@ impl GlobalCtx {
 }
 
 impl<'a> LocalCtx<'a> {
+    fn check_constructor(
+        &'a self,
+        globals: &GlobalCtx,
+        ctr: SourceConstructor,
+    ) -> Result<Constructor> {
+        let mut args = Vec::new();
+        for arg in ctr.args {
+            args.push(self.check_type(globals, *arg)?);
+        }
+        Ok(Constructor { args })
+    }
+
     pub fn check_type(&'a self, globals: &GlobalCtx, ty: SourceType) -> Result<Rc<Type>> {
         Ok(Rc::new(match ty {
             SourceType::Inductive(istr, args) => {
@@ -107,27 +124,27 @@ impl<'a> LocalCtx<'a> {
 }
 
 impl PolyType {
-    pub fn instantiate(&self, globals: &GlobalSubst, r#gen: &mut TypeVarGen) -> Rc<Type> {
+    pub fn instantiate(&self, globals: &GlobalSubst, tvg: &mut TypeVarGen) -> Rc<Type> {
         globals.resolve_fully(&*self.ty).subst(
             &self
                 .binders
                 .names
                 .iter()
-                .map(|(b, _)| (*b, Type::TypeVar(r#gen.next())))
+                .map(|(b, _)| (*b, Rc::new(Type::TypeVar(tvg.next()))))
                 .collect(),
         )
     }
 }
 
 impl Type {
-    fn subst(&self, apply: &HashMap<TypeVar, Type>) -> Rc<Type> {
+    pub fn subst(&self, apply: &HashMap<TypeVar, Rc<Type>>) -> Rc<Type> {
         match self {
             Type::Inductive(istr, items) => Rc::new(Type::Inductive(
                 *istr,
                 items.iter().map(|x| x.subst(apply)).collect(),
             )),
             Type::TypeVar(tv) => match apply.get(tv) {
-                Some(x) => Rc::new(x.clone()),
+                Some(x) => x.clone(),
                 None => Rc::new(Type::TypeVar(*tv)),
             },
             Type::Arrow(t1, t2) => Rc::new(Type::Arrow(t1.subst(apply), t2.subst(apply))),

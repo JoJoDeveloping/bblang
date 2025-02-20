@@ -15,7 +15,11 @@ impl SourceGenerics {
 pub struct SourceInductive {
     pub generics: SourceGenerics,
     pub name: IStr,
-    pub constrs: HashMap<IStr, SourceType>,
+    pub constrs: HashMap<IStr, SourceConstructor>,
+}
+
+pub struct SourceConstructor {
+    pub args: Vec<Box<SourceType>>,
 }
 
 pub struct SourceInductives(pub Vec<SourceInductive>);

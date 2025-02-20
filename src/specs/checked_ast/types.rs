@@ -10,7 +10,22 @@ pub struct Generics {
 pub struct Inductive {
     pub generics: Generics,
     pub name: IStr,
-    pub constrs: HashMap<IStr, Rc<Type>>,
+    pub constrs: HashMap<IStr, Constructor>,
+}
+impl Inductive {
+    pub(crate) fn uninstantiated_type(&self) -> Rc<Type> {
+        Rc::new(Type::Inductive(
+            self.name,
+            self.generics
+                .names
+                .iter()
+                .map(|(x, _)| Rc::new(Type::TypeVar(*x)))
+                .collect(),
+        ))
+    }
+}
+pub struct Constructor {
+    pub args: Vec<Rc<Type>>,
 }
 
 pub struct Inductives(pub Vec<Inductive>);

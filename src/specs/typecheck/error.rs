@@ -20,6 +20,8 @@ pub enum TypeError {
     UndefinedVar(IStr),
     IllegalGenericsDefinition(Generics, HashSet<TypeVar>),
     UndefinedConstr(IStr),
+    IllegalGenericsInstantiation(Generics, usize),
+    IllegalConstructorApplication(IStr, IStr, usize),
 }
 
 pub type Result<T> = core::result::Result<T, TypeError>;

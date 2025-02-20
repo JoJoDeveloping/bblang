@@ -6,6 +6,7 @@ use crate::specs::{
         types::{Generics, PolyType, Type},
     },
     source_ast::SourceExpr,
+    typecheck::w::utils::TypeVar,
 };
 
 use super::{
@@ -108,16 +109,69 @@ impl<'a> LocalCtx<'a> {
                     ),
                 };
             }
-            SourceExpr::IndConst(ind, ctr, spec, args) => {
+            SourceExpr::IndConst(indname, ctrname, spec, args) => {
                 let ind = globals
-                    .get_inductive(ind)
-                    .ok_or_else(|| (TypeError::UndefinedInductive(ind)))?;
+                    .get_inductive(indname)
+                    .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
                 let ctr = ind
                     .constrs
-                    .get(&ctr)
-                    .ok_or_else(|| (TypeError::UndefinedConstr(ctr)))?
+                    .get(&ctrname)
+                    .ok_or_else(|| (TypeError::UndefinedConstr(ctrname)))?
                     .clone();
-                todo!()
+                let ctr: Vec<_> = ctr
+                    .args
+                    .iter()
+                    .map(|x| globals.subst.resolve_fully(x))
+                    .collect();
+                let data: Vec<_> = ind.generics.names.iter().map(|(x, _)| *x).collect();
+                let res_ty = ind.uninstantiated_type();
+                let (data, instanti) = match spec {
+                    None => {
+                        let mut instanti = Vec::new();
+                        let mut substi = HashMap::new();
+                        for x in data {
+                            let ty = Rc::new(Type::TypeVar(globals.name_generator.next()));
+                            instanti.push(ty.clone());
+                            substi.insert(x, ty);
+                        }
+                        (substi, instanti)
+                    }
+                    Some(vec) => {
+                        if vec.len() != data.len() {
+                            return Err(TypeError::IllegalGenericsInstantiation(
+                                ind.generics.clone(),
+                                vec.len(),
+                            ));
+                        }
+                        let mut substi = HashMap::new();
+                        let mut instanti = Vec::new();
+                        for (x, styo) in data.into_iter().zip(vec.into_iter()) {
+                            let ty = match styo {
+                                Some(ty) => self.check_type(globals, *ty)?,
+                                None => Rc::new(Type::TypeVar(globals.name_generator.next())),
+                            };
+                            instanti.push(ty.clone());
+                            substi.insert(x, ty);
+                        }
+                        (substi, instanti)
+                    }
+                };
+                let ctr: Vec<_> = ctr.into_iter().map(|x| x.subst(&data)).collect();
+                let res_ty = res_ty.subst(&data);
+                if args.len() != ctr.len() {
+                    return Err(TypeError::IllegalConstructorApplication(
+                        indname,
+                        ctrname,
+                        args.len(),
+                    ));
+                }
+                let mut new_args = Vec::new();
+                for (should_ty, expr) in ctr.into_iter().zip(args.into_iter()) {
+                    let (is_ty, expr) = self.check_expr(globals, *expr)?;
+                    globals.subst.unify(should_ty, is_ty)?;
+                    new_args.push(Box::new(expr));
+                }
+                (res_ty, Expr::IndConst(indname, ctrname, instanti, new_args))
             }
             SourceExpr::IndMatch(source_expr, istr, _hash_map) => todo!(),
         })

@@ -9,7 +9,7 @@ pub enum Expr {
     Lambda(Option<IStr>, IStr, Rc<Type>, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
     Let(IStr, Box<PolyType>, Box<Expr>, Box<Expr>),
-    IndConst(IStr, IStr, Vec<Box<Type>>, Vec<Box<Expr>>),
+    IndConst(IStr, IStr, Vec<Rc<Type>>, Vec<Box<Expr>>),
     IndMatch(Box<Expr>, IStr, HashMap<IStr, MatchArm>),
 }
 
