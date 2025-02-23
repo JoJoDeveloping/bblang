@@ -101,7 +101,6 @@ impl GlobalSubst {
             Some(ty2) => self.unify(ty, ty2.clone()),
             None => {
                 if ty.occurs(tv, self) {
-                    panic!("{tv:?}, {ty:?}");
                     return Err(TypeError::OccursFailure(tv, ty));
                 }
                 self.bindings.insert(tv, ty);
