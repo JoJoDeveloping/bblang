@@ -22,7 +22,8 @@ pub fn run_spec_program(v: Vec<SourceDef>) {
     let mut exec = ExecCtx::new(global.type_defs);
     exec.consume_globals(defs);
     for ele in exec.globals_order {
+        let ty = global.global_defs.get(&ele).unwrap();
         let val = exec.globals.get(&ele).unwrap();
-        println!("{ele}: {val}");
+        println!("{ele}: {ty} = {val}");
     }
 }

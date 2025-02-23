@@ -8,7 +8,7 @@ use crate::utils::string_interner::IStr;
 
 use super::{
     checked_ast::expr::{ConstDef, Expr},
-    typecheck::w::{TypeCtx, utils::GlobalSubst},
+    typecheck::w::TypeCtx,
 };
 
 #[derive(Clone, Debug)]
@@ -27,14 +27,14 @@ pub enum Value {
 }
 #[derive(Debug)]
 pub struct ExecCtx {
-    pub types: TypeCtx,
+    pub _types: TypeCtx,
     pub globals: HashMap<IStr, Rc<Value>>,
     pub globals_order: Vec<IStr>,
 }
 impl ExecCtx {
     pub fn new(types: TypeCtx) -> Self {
         Self {
-            types,
+            _types: types,
             globals: HashMap::new(),
             globals_order: Vec::new(),
         }
@@ -103,8 +103,9 @@ impl<'a> ExecLocalCtx<'a> {
                     panic!("apply to non-function!")
                 };
                 let argv = self.exec(globals, arge);
-                captures.insert(arg, argv);
+                captures.insert(arg, argv.clone());
                 if let Some(rec) = rec {
+                    // println!("Evaluating recursive call to {rec} with arg {argv}");
                     captures.insert(rec, fun);
                 }
                 let subscope = self.push(captures);
@@ -166,8 +167,11 @@ impl Expr {
                 res
             }
             Expr::Let(var, _, bound, rest) => {
-                let mut res = bound.free_vars();
+                let mut res = rest.free_vars();
                 res.remove(var);
+                bound.free_vars().into_iter().for_each(|x| {
+                    res.insert(x);
+                });
                 res
             }
             Expr::IndConst(_, _, _, exprs) => {
@@ -203,12 +207,12 @@ impl Display for Value {
                 write!(f, "{ty}::{constr}(")?;
                 let mut comma = false;
                 for v in args {
-                    v.fmt(f)?;
                     if comma {
                         write!(f, ", ")?
                     } else {
                         comma = true
                     }
+                    v.fmt(f)?;
                 }
                 write!(f, ")")
             }

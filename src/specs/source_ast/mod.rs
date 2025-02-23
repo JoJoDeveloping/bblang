@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::utils::string_interner::IStr;
+use crate::{parse::Span, utils::string_interner::IStr};
 
 pub struct SourceGenerics {
     pub names: Vec<IStr>,
@@ -16,54 +16,59 @@ pub struct SourceInductive {
     pub generics: SourceGenerics,
     pub name: IStr,
     pub constrs: HashMap<IStr, SourceConstructor>,
+    pub pos: Span,
 }
 
 pub struct SourceConstructor {
-    pub args: Vec<Box<SourceType>>,
+    pub args: Vec<SourceTypeBox>,
 }
 
 pub struct SourceInductives(pub Vec<SourceInductive>);
 
+pub type SourceTypeBox = Box<(SourceType, Span)>;
 #[derive(Clone, Debug)]
 pub enum SourceType {
-    Inductive(IStr, Vec<Box<SourceType>>),
+    Inductive(IStr, Vec<SourceTypeBox>),
     BoundVar(IStr),
-    Arrow(Box<SourceType>, Box<SourceType>),
+    Arrow(SourceTypeBox, SourceTypeBox),
 }
 
 pub struct SourcePolyType {
     pub binders: SourceGenerics,
-    pub ty: Box<SourceType>,
+    pub ty: SourceTypeBox,
 }
+
+pub type SourceExprBox = Box<(SourceExpr, Span)>;
 pub enum SourceExpr {
     Var(IStr),
-    Lambda(Option<IStr>, IStr, Option<Box<SourceType>>, Box<SourceExpr>),
-    App(Box<SourceExpr>, Box<SourceExpr>),
+    Lambda(Option<IStr>, IStr, Option<SourceTypeBox>, SourceExprBox),
+    App(SourceExprBox, SourceExprBox),
     Let(
         IStr,
         Option<Box<SourcePolyType>>,
-        Box<SourceExpr>,
-        Box<SourceExpr>,
+        SourceExprBox,
+        SourceExprBox,
     ),
     IndConst(
         IStr,
         IStr,
-        Option<Vec<Option<Box<SourceType>>>>,
-        Vec<Box<SourceExpr>>,
+        Option<Vec<Option<SourceTypeBox>>>,
+        Vec<SourceExprBox>,
     ),
-    IndMatch(Box<SourceExpr>, Option<IStr>, HashMap<IStr, SourceMatchArm>),
+    IndMatch(SourceExprBox, Option<IStr>, HashMap<IStr, SourceMatchArm>),
 }
 
 pub struct SourceMatchArm {
     pub constr: IStr,
     pub vars: Vec<IStr>,
-    pub expr: Box<SourceExpr>,
+    pub expr: SourceExprBox,
 }
 
 pub struct SourceConstDef {
     pub name: IStr,
     pub ty: SourcePolyType,
-    pub value: Box<SourceExpr>,
+    pub value: SourceExprBox,
+    pub pos: Span,
 }
 
 pub enum SourceDef {

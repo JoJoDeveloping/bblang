@@ -2,8 +2,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
-    ops::{Deref, Sub},
     rc::Rc,
 };
 
@@ -65,6 +63,7 @@ impl TypeLike for PolyType {
 
 impl GlobalSubst {
     pub fn unify(&mut self, ty1: Rc<Type>, ty2: Rc<Type>) -> Result<(), TypeError> {
+        // println!("Unifying {ty1:?} with {ty2:?}");
         match (&*ty1, &*ty2) {
             (Type::Arrow(in1, out1), Type::Arrow(in2, out2)) => {
                 self.unify(in1.clone(), in2.clone())?;
@@ -90,6 +89,7 @@ impl GlobalSubst {
     }
 
     fn bind(&mut self, tv: TypeVar, ty: Rc<Type>) -> Result<(), TypeError> {
+        let ty = Rc::new(self.resolve_fully(&ty));
         // Check for binding a variable to itself
         if let Type::TypeVar(u) = &*ty {
             if *u == tv {
@@ -101,6 +101,7 @@ impl GlobalSubst {
             Some(ty2) => self.unify(ty, ty2.clone()),
             None => {
                 if ty.occurs(tv, self) {
+                    panic!("{tv:?}, {ty:?}");
                     return Err(TypeError::OccursFailure(tv, ty));
                 }
                 self.bindings.insert(tv, ty);

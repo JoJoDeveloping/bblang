@@ -20,8 +20,6 @@ pub fn parse_and_compile_program(path: &str, input: &str) -> Program {
 }
 
 fn main() {
-    specs::typecheck::example::example().unwrap();
-
     let args: Vec<_> = env::args().collect();
     let filename = &args[1];
     if filename.ends_with(".sl") {

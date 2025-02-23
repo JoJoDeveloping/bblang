@@ -1,11 +1,14 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::specs::{
-    checked_ast::types::{Constructor, Generics, Inductive, Inductives, PolyType, Type},
-    source_ast::{
-        SourceConstructor, SourceGenerics, SourceInductive, SourceInductives, SourceType,
+use crate::{
+    parse::Span,
+    specs::{
+        checked_ast::types::{Constructor, Generics, Inductive, Inductives, PolyType, Type},
+        source_ast::{
+            SourceConstructor, SourceGenerics, SourceInductives, SourceType, SourceTypeBox,
+        },
+        typecheck::w::InductiveDef,
     },
-    typecheck::w::InductiveDef,
 };
 
 use super::{
@@ -19,26 +22,30 @@ use super::{
 impl GlobalCtx {
     pub fn check_inductives(&mut self, def: SourceInductives) -> Result<()> {
         for idx in &def.0 {
-            if let Some(ov) = self.type_defs.type_locations.insert(
+            if let Some(_) = self.type_defs.type_locations.insert(
                 idx.name,
                 InductiveDef::UnderConstruction(idx.generics.arity()),
             ) {
-                return Err(TypeError::DuplicateInductive(idx.name));
+                return Err((TypeError::DuplicateInductive(idx.name), idx.pos));
             }
         }
-        println!("foo bar {:?}", self.type_defs);
+        // println!("foo bar {:?}", self.type_defs);
         let mut res = Inductives(Vec::new());
         let es = LocalCtx::new();
         {
             for inductive in def.0 {
-                let (generics, scope) = es.enter_generics(self, inductive.generics)?;
+                let (generics, scope) =
+                    es.enter_generics(inductive.pos, self, inductive.generics)?;
                 let mut constrs = HashMap::new();
                 for (cn, ctr) in inductive.constrs {
                     if constrs
                         .insert(cn, scope.check_constructor(self, ctr)?)
                         .is_some()
                     {
-                        return Err(TypeError::DuplicateConstructor(inductive.name, cn));
+                        return Err((
+                            TypeError::DuplicateConstructor(inductive.name, cn),
+                            inductive.pos,
+                        ));
                     }
                 }
                 res.0.push(Rc::new(Inductive {
@@ -67,25 +74,28 @@ impl<'a> LocalCtx<'a> {
     ) -> Result<Constructor> {
         let mut args = Vec::new();
         for arg in ctr.args {
-            args.push(self.check_type(globals, *arg)?);
+            args.push(self.check_type(globals, arg)?);
         }
         Ok(Constructor { args })
     }
 
-    pub fn check_type(&'a self, globals: &GlobalCtx, ty: SourceType) -> Result<Rc<Type>> {
-        Ok(Rc::new(match ty {
+    pub fn check_type(&'a self, globals: &GlobalCtx, inty: SourceTypeBox) -> Result<Rc<Type>> {
+        Ok(Rc::new(match inty.0 {
             SourceType::Inductive(istr, args) => {
                 let ind = globals
                     .type_defs
                     .get_inductive_arity(istr)
-                    .ok_or_else(|| TypeError::UndefinedInductive(istr))?;
+                    .ok_or_else(|| (TypeError::UndefinedInductive(istr), inty.1))?;
                 if ind != args.len() {
-                    panic!("Illegal {istr} {ind} {:?}", args);
-                    return Err(TypeError::IllegalInductiveInstantiation(istr, args.len()));
+                    // panic!("Illegal {istr} {ind} {:?}", args);
+                    return Err((
+                        TypeError::IllegalInductiveInstantiation(istr, args.len()),
+                        inty.1,
+                    ));
                 }
                 let x: Result<Vec<Rc<_>>> = args
                     .into_iter()
-                    .map(|ty| self.check_type(globals, *ty))
+                    .map(|ty| self.check_type(globals, ty))
                     .collect();
                 Type::Inductive(istr, x?)
             }
@@ -96,23 +106,24 @@ impl<'a> LocalCtx<'a> {
                     let ind = globals
                         .type_defs
                         .get_inductive_arity(istr)
-                        .ok_or_else(|| TypeError::UndefinedType(istr))?;
+                        .ok_or_else(|| (TypeError::UndefinedType(istr), inty.1))?;
                     if ind != 0 {
-                        panic!("Illegal {ind} to 0");
-                        return Err(TypeError::IllegalInductiveInstantiation(istr, 0));
+                        // panic!("Illegal {ind} to 0");
+                        return Err((TypeError::IllegalInductiveInstantiation(istr, 0), inty.1));
                     }
                     Type::Inductive(istr, vec![])
                 }
             }
             SourceType::Arrow(dom, cod) => Type::Arrow(
-                (self.check_type(globals, *dom)?),
-                (self.check_type(globals, *cod)?),
+                self.check_type(globals, dom)?,
+                self.check_type(globals, cod)?,
             ),
         }))
     }
 
     pub fn enter_generics(
         &'a self,
+        pos: Span,
         globals: &mut GlobalCtx,
         generics: SourceGenerics,
     ) -> Result<(Generics, LocalCtx<'a>)> {
@@ -121,7 +132,7 @@ impl<'a> LocalCtx<'a> {
         for var in generics.names {
             let tv = globals.name_generator.next();
             if map.insert(var, tv).is_some() {
-                return Err(TypeError::DuplicateTypeVariableInGenerics(var));
+                return Err((TypeError::DuplicateTypeVariableInGenerics(var), pos));
             }
             names.push((tv, Some(var)));
         }

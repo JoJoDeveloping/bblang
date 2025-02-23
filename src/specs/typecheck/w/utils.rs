@@ -1,8 +1,6 @@
 use std::{
-    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     hash::Hash,
-    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
@@ -94,5 +92,11 @@ impl PolyType {
             binders: Generics { names: vec![] },
             ty,
         }
+    }
+}
+
+impl TypeVar {
+    pub fn number(self) -> usize {
+        self.0
     }
 }

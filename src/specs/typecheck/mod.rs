@@ -1,21 +1,9 @@
-use std::rc::Rc;
-
-use error::{Result, TypeError};
+use error::Result;
 use w::GlobalCtx;
 
-use crate::{specs::exec::ExecCtx, utils::string_interner::intern};
-
-use super::{
-    checked_ast::expr::ConstDef,
-    exec::Value,
-    source_ast::{
-        SourceConstDef, SourceConstructor, SourceDef, SourceExpr, SourceGenerics, SourceInductive,
-        SourceInductives, SourceMatchArm, SourcePolyType, SourceType,
-    },
-};
+use super::{checked_ast::expr::ConstDef, source_ast::SourceDef};
 
 pub mod error;
-pub mod example;
 pub mod exprs;
 pub mod types;
 pub mod w;
