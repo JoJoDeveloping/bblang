@@ -7,6 +7,7 @@ use crate::{
 
 use super::w::utils::TypeVar;
 
+#[derive(Debug)]
 pub enum TypeError {
     InvalidInductive(IStr),
     UndefinedInductive(IStr),
@@ -24,6 +25,7 @@ pub enum TypeError {
     IllegalConstructorApplication(IStr, IStr, usize),
     MatchNotOnInductive(Rc<Type>),
     MatchError(),
+    DuplicateGlobal(IStr),
 }
 
 pub type Result<T> = core::result::Result<T, TypeError>;

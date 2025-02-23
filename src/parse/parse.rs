@@ -1,8 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
 use crate::{
     compile::highast::{BoxExpr, Expr, Function, Program},
     progs::ast::{BinOp, Value},
+    specs::{
+        checked_ast::expr::MatchArm,
+        source_ast::{
+            SourceConstDef, SourceConstructor, SourceDef, SourceExpr, SourceGenerics,
+            SourceInductive, SourceInductives, SourceMatchArm, SourcePolyType, SourceType,
+        },
+    },
     utils::string_interner::IStr,
 };
 
@@ -298,5 +305,278 @@ impl Parser {
             }
         }
         Program { functions }
+    }
+
+    pub fn parse_spec_program(&mut self) -> Vec<SourceDef> {
+        let mut res = Vec::new();
+        while let Some(_) = self.peek_token() {
+            res.push(self.parse_spec_item());
+        }
+        res
+    }
+
+    fn parse_spec_item(&mut self) -> SourceDef {
+        match self.peek_token() {
+            Some(Token::INDUCTIVE) => SourceDef::Inductives(self.parse_inductives()),
+            Some(Token::DEF) => SourceDef::Const(self.parse_const_item()),
+            got => self.otok_error("expected inductives or const def", got),
+        }
+    }
+
+    fn parse_inductive(&mut self) -> SourceInductive {
+        let name = self.expect_ident();
+        let generics = self.parse_generics();
+        self.expect(Token::EQ);
+        match self.peek_token() {
+            Some(Token::BANG) => {
+                self.next_token();
+                return SourceInductive {
+                    generics,
+                    name,
+                    constrs: HashMap::new(),
+                };
+            }
+            Some(Token::PIPE) => {
+                self.next_token();
+            }
+            _ => {}
+        }
+        let mut constrs = HashMap::new();
+        loop {
+            let cname = self.expect_ident();
+            let args = if let Some(Token::LPAR) = self.peek_token() {
+                self.next_token();
+                self.parse_comma_separated(Token::RPAR, Self::parse_source_type)
+            } else {
+                vec![]
+            };
+            if let Some(_) = constrs.insert(cname, SourceConstructor { args }) {
+                self.error(&format!("Constructor {cname} appears twice in {name}"))
+            }
+            if let Some(Token::PIPE) = self.peek_token() {
+                self.next_token();
+                continue;
+            } else {
+                break;
+            }
+        }
+        SourceInductive {
+            generics,
+            name,
+            constrs,
+        }
+    }
+
+    fn parse_inductives(&mut self) -> SourceInductives {
+        self.expect(Token::INDUCTIVE);
+        let mut res = Vec::new();
+        loop {
+            res.push(self.parse_inductive());
+            if let Some(Token::WITH) = self.peek_token() {
+                self.next_token();
+                continue;
+            } else {
+                break;
+            }
+        }
+        SourceInductives(res)
+    }
+
+    fn parse_generics(&mut self) -> SourceGenerics {
+        let Some(Token::LT) = self.peek_token() else {
+            return SourceGenerics { names: vec![] };
+        };
+        self.next_token();
+        let names = self.parse_comma_separated_idents(Token::GT);
+        SourceGenerics { names }
+    }
+
+    fn parse_source_type(&mut self) -> Box<SourceType> {
+        let bty = self.parse_source_base_type();
+        if let Some(Token::MINUSGT) = self.peek_token() {
+            self.next_token();
+            let res = self.parse_source_type();
+            Box::new(SourceType::Arrow(bty, res))
+        } else {
+            bty
+        }
+    }
+
+    fn parse_source_base_type(&mut self) -> Box<SourceType> {
+        match self.next_token() {
+            Some(Token::LPAR) => {
+                let res = self.parse_source_type();
+                self.expect(Token::RPAR);
+                res
+            }
+            Some(Token::IDENT(name)) => {
+                let Some(Token::LT) = self.peek_token() else {
+                    return Box::new(SourceType::BoundVar(name));
+                };
+                self.next_token();
+                let spec = self.parse_comma_separated(Token::GT, Self::parse_source_type);
+                Box::new(SourceType::Inductive(name, spec))
+            }
+            got => self.otok_error("expected (spec) type", got),
+        }
+    }
+
+    fn parse_polyty(&mut self) -> SourcePolyType {
+        let names = if let Some(Token::FORALL) = self.peek_token() {
+            self.next_token();
+            let mut names = Vec::new();
+            loop {
+                match self.next_token() {
+                    Some(Token::COMMA) => break,
+                    Some(Token::IDENT(i)) => names.push(i),
+                    got => self.otok_error("expected ident or quantifier ending comma", got),
+                }
+            }
+            names
+        } else {
+            vec![]
+        };
+        SourcePolyType {
+            binders: SourceGenerics { names },
+            ty: self.parse_source_type(),
+        }
+    }
+
+    fn parse_const_item(&mut self) -> SourceConstDef {
+        self.expect(Token::DEF);
+        let name = self.expect_ident();
+        self.expect(Token::COLON);
+        let ty = self.parse_polyty();
+        self.expect(Token::EQ);
+        let value = self.parse_spec_expr();
+        SourceConstDef { name, ty, value }
+    }
+
+    fn parse_spec_expr(&mut self) -> Box<SourceExpr> {
+        let mut res = self.parse_spec_base_expr();
+        while let Some(
+            Token::MATCH | Token::LET | Token::FUN | Token::REC | Token::LPAR | Token::IDENT(_),
+        ) = self.peek_token()
+        {
+            res = Box::new(SourceExpr::App(res, self.parse_spec_base_expr()));
+        }
+        res
+    }
+
+    fn parse_spec_base_expr(&mut self) -> Box<SourceExpr> {
+        Box::new(match self.next_token() {
+            Some(Token::MATCH) => {
+                let discriminee = self.parse_spec_expr();
+                let ty = if let Some(Token::COLON) = self.peek_token() {
+                    self.next_token();
+                    Some(self.expect_ident())
+                } else {
+                    None
+                };
+                self.expect(Token::WITH);
+                let mut arms = HashMap::new();
+                match self.peek_token() {
+                    Some(Token::END) => {
+                        return Box::new(SourceExpr::IndMatch(discriminee, ty, arms));
+                    }
+                    Some(Token::PIPE) => {
+                        self.next_token();
+                    }
+                    _ => {}
+                }
+                loop {
+                    let constr = self.expect_ident();
+                    if arms.contains_key(&constr) {
+                        self.error(&format!("Match has arm {constr} twice!"));
+                    }
+                    let vars = if let Some(Token::LPAR) = self.peek_token() {
+                        self.next_token();
+                        self.parse_comma_separated_idents(Token::RPAR)
+                    } else {
+                        vec![]
+                    };
+                    self.expect(Token::EQGT);
+                    let expr = self.parse_spec_expr();
+                    arms.insert(constr, SourceMatchArm { constr, vars, expr });
+                    match self.next_token() {
+                        Some(Token::PIPE) => continue,
+                        Some(Token::END) => break,
+                        got => self.otok_error("expected next match case or match to end", got),
+                    }
+                }
+                SourceExpr::IndMatch(discriminee, ty, arms)
+            }
+            Some(Token::LET) => {
+                let binder = self.expect_ident();
+                let polyty = if let Some(Token::COLON) = self.peek_token() {
+                    self.next_token();
+                    Some(Box::new(self.parse_polyty()))
+                } else {
+                    None
+                };
+                self.expect(Token::EQ);
+                let expr1 = self.parse_spec_expr();
+                self.expect(Token::IN);
+                let expr2 = self.parse_spec_expr();
+                self.expect(Token::END);
+                SourceExpr::Let(binder, polyty, expr1, expr2)
+            }
+            Some(Token::FUN) => self.parse_lambda(None),
+            Some(Token::REC) => {
+                let rbinder = self.expect_ident();
+                self.parse_lambda(Some(rbinder))
+            }
+            Some(Token::LPAR) => {
+                let res = self.parse_spec_expr();
+                self.expect(Token::RPAR);
+                return res;
+            }
+            Some(Token::IDENT(x)) => {
+                if let Some(Token::COLONCOLON) = self.peek_token() {
+                    self.next_token();
+                    let ident2 = self.expect_ident();
+                    let spec = if let Some(Token::LT) = self.peek_token() {
+                        self.next_token();
+                        let r =
+                            self.parse_comma_separated(Token::GT, Self::parse_optional_type_spec);
+                        self.expect(Token::GT);
+                        Some(r)
+                    } else {
+                        None
+                    };
+                    self.expect(Token::LPAR);
+                    let args = self.parse_comma_separated(Token::RPAR, Self::parse_spec_expr);
+                    SourceExpr::IndConst(x, ident2, spec, args)
+                } else {
+                    SourceExpr::Var(x)
+                }
+            }
+            got => self.otok_error("expected (spec) expression", got),
+        })
+    }
+
+    fn parse_optional_type_annot(&mut self) -> Option<Box<SourceType>> {
+        if let Some(Token::COLON) = self.peek_token() {
+            self.next_token();
+            Some(self.parse_source_type())
+        } else {
+            None
+        }
+    }
+
+    fn parse_optional_type_spec(&mut self) -> Option<Box<SourceType>> {
+        if let Some(Token::UNDERSCORE) = self.peek_token() {
+            None
+        } else {
+            Some(self.parse_source_type())
+        }
+    }
+
+    fn parse_lambda(&mut self, rbinder: Option<IStr>) -> SourceExpr {
+        let abinder = self.expect_ident();
+        let ty = self.parse_optional_type_annot();
+        self.expect(Token::EQGT);
+        let body = self.parse_spec_expr();
+        SourceExpr::Lambda(rbinder, abinder, ty, body)
     }
 }

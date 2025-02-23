@@ -7,6 +7,7 @@ pub struct Generics {
     pub names: Vec<(TypeVar, Option<IStr>)>,
 }
 
+#[derive(Debug)]
 pub struct Inductive {
     pub generics: Generics,
     pub name: IStr,
@@ -24,10 +25,11 @@ impl Inductive {
         ))
     }
 }
+#[derive(Debug)]
 pub struct Constructor {
     pub args: Vec<Rc<Type>>,
 }
-
+#[derive(Debug)]
 pub struct Inductives(pub Vec<Rc<Inductive>>);
 
 #[derive(Clone, Debug)]

@@ -33,7 +33,10 @@ impl TypeLike for Type {
                 .map(|x| x.fold_vars(f, r, c, globals))
                 .fold(r(), c),
             // Type::BoundVar(istr) => r,
-            Type::TypeVar(x) => todo!(),
+            Type::TypeVar(x) => match globals.bindings.get(x) {
+                Some(t) => t.fold_vars(f, r, c, globals),
+                None => f(*x),
+            },
             Type::Arrow(a, b) => c(a.fold_vars(f, r, c, globals), b.fold_vars(f, r, c, globals)),
         }
     }
@@ -129,28 +132,23 @@ impl GlobalSubst {
         }
     }
 }
-
+#[derive(Debug)]
 pub enum InductiveDef {
     Defined(usize, usize),
     UnderConstruction(usize),
 }
 
-pub struct GlobalCtx {
+#[derive(Debug)]
+pub struct TypeCtx {
     pub type_defs: Vec<Inductives>,
     pub type_locations: HashMap<IStr, InductiveDef>,
-    pub global_defs: HashMap<IStr, PolyType>,
-    pub name_generator: TypeVarGen,
-    pub subst: GlobalSubst,
 }
 
-impl GlobalCtx {
+impl TypeCtx {
     pub fn new() -> Self {
         Self {
             type_defs: Vec::new(),
             type_locations: HashMap::new(),
-            global_defs: HashMap::new(),
-            name_generator: TypeVarGen::new(),
-            subst: GlobalSubst::new(),
         }
     }
     pub fn get_inductive(&self, name: IStr) -> Option<Rc<Inductive>> {
@@ -161,8 +159,28 @@ impl GlobalCtx {
     }
     pub fn get_inductive_arity(&self, name: IStr) -> Option<usize> {
         match *self.type_locations.get(&name)? {
-            InductiveDef::Defined(idx, off) => Some(self.type_defs[idx].0[off].constrs.len()),
+            InductiveDef::Defined(idx, off) => {
+                Some(self.type_defs[idx].0[off].generics.names.len())
+            }
             InductiveDef::UnderConstruction(arity) => Some(arity),
+        }
+    }
+}
+
+pub struct GlobalCtx {
+    pub type_defs: TypeCtx,
+    pub global_defs: HashMap<IStr, PolyType>,
+    pub name_generator: TypeVarGen,
+    pub subst: GlobalSubst,
+}
+
+impl GlobalCtx {
+    pub fn new() -> Self {
+        Self {
+            type_defs: TypeCtx::new(),
+            global_defs: HashMap::new(),
+            name_generator: TypeVarGen::new(),
+            subst: GlobalSubst::new(),
         }
     }
 }

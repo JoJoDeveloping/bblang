@@ -4,6 +4,7 @@ use crate::utils::string_interner::IStr;
 
 use super::types::{PolyType, Type};
 
+#[derive(Clone, Debug)]
 pub enum Expr {
     Var(IStr),
     Lambda(Option<IStr>, IStr, Rc<Type>, Box<Expr>),
@@ -13,14 +14,16 @@ pub enum Expr {
     IndMatch(Box<Expr>, IStr, HashMap<IStr, MatchArm>),
 }
 
+#[derive(Clone, Debug)]
 pub struct MatchArm {
     pub constr: IStr,
     pub vars: Vec<IStr>,
     pub expr: Box<Expr>,
 }
 
-struct ConstDef {
-    name: IStr,
-    ty: PolyType,
-    value: Box<Expr>,
+#[derive(Debug)]
+pub struct ConstDef {
+    pub name: IStr,
+    pub ty: PolyType,
+    pub value: Box<Expr>,
 }

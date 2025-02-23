@@ -20,11 +20,19 @@ pub fn parse_and_compile_program(path: &str, input: &str) -> Program {
 }
 
 fn main() {
-    let args: Vec<_> = env::args().collect();
-    let prog = parse_and_compile_program(&args[1], &read_file(&args[1]));
+    specs::typecheck::example::example().unwrap();
 
-    let mut cfg = MachineState::start(prog, intern("main"), vec![]);
-    let res = cfg.run();
-    println!("{:?}", res);
-    println!("{}", cfg);
+    let args: Vec<_> = env::args().collect();
+    let filename = &args[1];
+    if filename.ends_with(".sl") {
+        let prog = parse_and_compile_program(filename, &read_file(filename));
+
+        let mut cfg = MachineState::start(prog, intern("main"), vec![]);
+        let res = cfg.run();
+        println!("{:?}", res);
+        println!("{}", cfg);
+    } else if filename.ends_with(".spec") {
+        let prog = specs::parse_spec_program(filename, &read_file(filename));
+        specs::run_spec_program(prog);
+    }
 }

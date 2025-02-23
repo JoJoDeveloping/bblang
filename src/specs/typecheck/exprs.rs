@@ -3,13 +3,16 @@ use std::{
     rc::Rc,
 };
 
-use crate::specs::{
-    checked_ast::{
-        expr::{Expr, MatchArm},
-        types::{Generics, PolyType, Type},
+use crate::{
+    specs::{
+        checked_ast::{
+            expr::{ConstDef, Expr, MatchArm},
+            types::{Generics, PolyType, Type},
+        },
+        source_ast::{SourceConstDef, SourceExpr},
+        typecheck::w::utils::TypeVar,
     },
-    source_ast::SourceExpr,
-    typecheck::w::utils::TypeVar,
+    utils::string_interner::IStr,
 };
 
 use super::{
@@ -18,6 +21,37 @@ use super::{
 };
 
 impl<'a> LocalCtx<'a> {
+    pub fn check_let(
+        &'a self,
+        gen2: Option<Generics>,
+        should_ty: Rc<Type>,
+        globals: &mut GlobalCtx,
+        bound: SourceExpr,
+    ) -> Result<(PolyType, Expr)> {
+        let lctx = self;
+        let (ty, expr_bound) = lctx.check_expr(globals, bound)?;
+        globals.subst.unify(ty.clone(), should_ty)?;
+        let fv_ctx = lctx.fvs(&globals.subst);
+        let mut fv_ty = ty.fvs(&globals.subst);
+        for fv in fv_ctx {
+            fv_ty.remove(&fv);
+        }
+        let binders = match gen2 {
+            Some(gen2)
+                if fv_ty.len() != gen2.names.len()
+                    || gen2.names.iter().any(|(x, _)| !fv_ty.contains(x)) =>
+            {
+                return Err(TypeError::IllegalGenericsDefinition(gen2, fv_ty));
+            }
+            Some(gen2) => gen2,
+            None => Generics {
+                names: fv_ty.into_iter().map(|x| (x, None)).collect(),
+            },
+        };
+        let polyty = PolyType { binders, ty };
+        Ok((polyty, expr_bound))
+    }
+
     pub fn check_expr(
         &'a self,
         globals: &mut GlobalCtx,
@@ -71,26 +105,7 @@ impl<'a> LocalCtx<'a> {
                          should_ty: Rc<Type>,
                          globals: &mut GlobalCtx|
                  -> Result<(Rc<Type>, Expr)> {
-                    let (ty, expr_bound) = lctx.check_expr(globals, *bound)?;
-                    globals.subst.unify(ty.clone(), should_ty)?;
-                    let fv_ctx = lctx.fvs(&globals.subst);
-                    let mut fv_ty = ty.fvs(&globals.subst);
-                    for fv in fv_ctx {
-                        fv_ty.remove(&fv);
-                    }
-                    let binders = match gen2 {
-                        Some(gen2)
-                            if fv_ty.len() != gen2.names.len()
-                                || gen2.names.iter().any(|(x, _)| !fv_ty.contains(x)) =>
-                        {
-                            return Err(TypeError::IllegalGenericsDefinition(gen2, fv_ty));
-                        }
-                        Some(gen2) => gen2,
-                        None => Generics {
-                            names: fv_ty.into_iter().map(|x| (x, None)).collect(),
-                        },
-                    };
-                    let polyty = PolyType { binders, ty };
+                    let (polyty, expr_bound) = lctx.check_let(gen2, should_ty, globals, *bound)?;
                     let lctx = self.push_vars([(istr, polyty.clone())].into_iter().collect());
                     let (ty3, rest) = lctx.check_expr(globals, *rest)?;
                     Ok((
@@ -114,6 +129,7 @@ impl<'a> LocalCtx<'a> {
             }
             SourceExpr::IndConst(indname, ctrname, spec, args) => {
                 let ind = globals
+                    .type_defs
                     .get_inductive(indname)
                     .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
                 let ctr = ind
@@ -186,6 +202,7 @@ impl<'a> LocalCtx<'a> {
                 let (ind, substi) = match inductive_ty {
                     Some(indname) => {
                         let ind = globals
+                            .type_defs
                             .get_inductive(indname)
                             .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
                         let res_ty = ind.uninstantiated_type();
@@ -208,6 +225,7 @@ impl<'a> LocalCtx<'a> {
                         let match_ty = globals.subst.resolve_fully(&match_ty);
                         if let Type::Inductive(indname, presubsti) = match_ty {
                             let ind = globals
+                                .type_defs
                                 .get_inductive(indname)
                                 .ok_or_else(|| (TypeError::UndefinedInductive(indname)))?;
                             let substi = ind
@@ -247,11 +265,14 @@ impl<'a> LocalCtx<'a> {
                     let scope = self.push_vars(envsubst);
                     let (resty2, expr) = scope.check_expr(globals, *arm.expr)?;
                     globals.subst.unify(resty2, res_ty.clone())?;
-                    new_arms.insert(arm.constr, MatchArm {
-                        constr: arm.constr,
-                        vars: arm.vars,
-                        expr: Box::new(expr),
-                    });
+                    new_arms.insert(
+                        arm.constr,
+                        MatchArm {
+                            constr: arm.constr,
+                            vars: arm.vars,
+                            expr: Box::new(expr),
+                        },
+                    );
                 }
                 (
                     res_ty,
@@ -305,5 +326,24 @@ impl GlobalCtx {
             }
         }
         *ty = Rc::new(self.subst.resolve_fully(&*ty))
+    }
+
+    pub fn check_constant(&mut self, cnst: SourceConstDef) -> Result<ConstDef> {
+        let lctx = LocalCtx::new();
+        let st = cnst.ty;
+        let (gen2, lctx) = lctx.enter_generics(self, st.binders)?;
+        let should_ty = lctx.check_type(self, *st.ty)?;
+        let (mut ty, mut value) = lctx.check_let(Some(gen2), should_ty, self, *cnst.value)?;
+        let polytybinders = ty.binders.names.iter().map(|x| x.0).collect();
+        self.resolve_expr_fully(&mut value, &polytybinders);
+        self.resolve_ty_fully(&mut ty.ty, &polytybinders);
+        if let Some(_) = self.global_defs.insert(cnst.name, ty.clone()) {
+            return Err(TypeError::DuplicateGlobal(cnst.name));
+        }
+        Ok(ConstDef {
+            name: cnst.name,
+            ty,
+            value: Box::new(value),
+        })
     }
 }

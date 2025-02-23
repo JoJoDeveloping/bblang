@@ -19,13 +19,14 @@ use super::{
 impl GlobalCtx {
     pub fn check_inductives(&mut self, def: SourceInductives) -> Result<()> {
         for idx in &def.0 {
-            if let Some(ov) = self.type_locations.insert(
+            if let Some(ov) = self.type_defs.type_locations.insert(
                 idx.name,
                 InductiveDef::UnderConstruction(idx.generics.arity()),
             ) {
                 return Err(TypeError::DuplicateInductive(idx.name));
             }
         }
+        println!("foo bar {:?}", self.type_defs);
         let mut res = Inductives(Vec::new());
         let es = LocalCtx::new();
         {
@@ -47,12 +48,13 @@ impl GlobalCtx {
                 }));
             }
         }
-        let idx = self.type_defs.len();
+        let idx = self.type_defs.type_defs.len();
         for (off, inductive) in res.0.iter().enumerate() {
-            self.type_locations
+            self.type_defs
+                .type_locations
                 .insert(inductive.name, InductiveDef::Defined(idx, off));
         }
-        self.type_defs.push(res);
+        self.type_defs.type_defs.push(res);
         Ok(())
     }
 }
@@ -74,9 +76,11 @@ impl<'a> LocalCtx<'a> {
         Ok(Rc::new(match ty {
             SourceType::Inductive(istr, args) => {
                 let ind = globals
+                    .type_defs
                     .get_inductive_arity(istr)
                     .ok_or_else(|| TypeError::UndefinedInductive(istr))?;
                 if ind != args.len() {
+                    panic!("Illegal {istr} {ind} {:?}", args);
                     return Err(TypeError::IllegalInductiveInstantiation(istr, args.len()));
                 }
                 let x: Result<Vec<Rc<_>>> = args
@@ -90,9 +94,11 @@ impl<'a> LocalCtx<'a> {
                     Type::TypeVar(x)
                 } else {
                     let ind = globals
+                        .type_defs
                         .get_inductive_arity(istr)
                         .ok_or_else(|| TypeError::UndefinedType(istr))?;
                     if ind != 0 {
+                        panic!("Illegal {ind} to 0");
                         return Err(TypeError::IllegalInductiveInstantiation(istr, 0));
                     }
                     Type::Inductive(istr, vec![])

@@ -44,10 +44,12 @@ pub enum Token {
     LT,
     LTEQ,
     LTMINUS,
+    GT,
     MINUSGT,
     EQGT,
     COLONCOLON,
     COLON,
+    UNDERSCORE,
     FUN,
     WITHLOCAL,
     NULLPTR,
@@ -65,11 +67,13 @@ pub enum Token {
     WITH,
     END,
     INDUCTIVE,
-    SFUN,
+    DEF,
+    REC,
     LET,
     IN,
     INT,
     PTR,
+    FORALL,
     IDENT(IStr),
     NUM(i32),
 }
@@ -103,11 +107,13 @@ impl Lexer {
         idmap.insert(intern("with"), Token::WITH);
         idmap.insert(intern("end"), Token::END);
         idmap.insert(intern("inductive"), Token::INDUCTIVE);
-        idmap.insert(intern("sfun"), Token::SFUN);
+        idmap.insert(intern("def"), Token::DEF);
+        idmap.insert(intern("rec"), Token::REC);
         idmap.insert(intern("let"), Token::LET);
         idmap.insert(intern("in"), Token::IN);
         idmap.insert(intern("int"), Token::INT);
         idmap.insert(intern("ptr"), Token::PTR);
+        idmap.insert(intern("forall"), Token::FORALL);
         Self {
             filename,
             data,
@@ -229,6 +235,7 @@ impl Lexer {
                         Token::LTMINUS
                     }
                     '<' => Token::LT,
+                    '>' => Token::GT,
                     '-' if !self.eof() && self.current_char() == '>' => {
                         self.next_char();
                         Token::MINUSGT
@@ -239,6 +246,7 @@ impl Lexer {
                         Token::COLONCOLON
                     }
                     ':' => Token::COLON,
+                    '_' => Token::UNDERSCORE,
                     c @ '0'..='9' => Token::NUM(self.lexnum(c)),
                     c if c.is_alphabetic() || c == '_' => {
                         let str = self.lexident(c);
@@ -270,73 +278,82 @@ mod test {
 
     #[test]
     fn test_all_tokens() {
-        let data = "(),+-*!~^&|;= == < <= <- -> => :: : fun locals nullptr if then else do done while return set alloc free match with end inductive sfun let in int ptr 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
+        let data = "(),+-*!~^&|;= == < > <= <- -> => :: : _ fun locals nullptr if then else do done while return set alloc free match with end inductive def rec let in int ptr 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
         let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
-        assert_eq!(res, [
-            Token::LPAR,
-            Token::RPAR,
-            Token::COMMA,
-            Token::PLUS,
-            Token::MINUS,
-            Token::STAR,
-            Token::BANG,
-            Token::TILDE,
-            Token::CARET,
-            Token::AND,
-            Token::PIPE,
-            Token::SEMI,
-            Token::EQ,
-            Token::EQEQ,
-            Token::LT,
-            Token::LTEQ,
-            Token::LTMINUS,
-            Token::MINUSGT,
-            Token::EQGT,
-            Token::COLONCOLON,
-            Token::COLON,
-            Token::FUN,
-            Token::WITHLOCAL,
-            Token::NULLPTR,
-            Token::IF,
-            Token::THEN,
-            Token::ELSE,
-            Token::DO,
-            Token::DONE,
-            Token::WHILE,
-            Token::RETURN,
-            Token::SET,
-            Token::ALLOC,
-            Token::FREE,
-            Token::MATCH,
-            Token::WITH,
-            Token::END,
-            Token::INDUCTIVE,
-            Token::SFUN,
-            Token::LET,
-            Token::IN,
-            Token::INT,
-            Token::PTR,
-            Token::NUM(0),
-            Token::NUM(1),
-            Token::NUM(2),
-            Token::NUM(42),
-            Token::NUM(999),
-            Token::IDENT(intern("foo")),
-            Token::IDENT(intern("bar")),
-            Token::IDENT(intern("baz")),
-            Token::IDENT(intern("FOO_BAR_42_baz")),
-        ])
+        assert_eq!(
+            res,
+            [
+                Token::LPAR,
+                Token::RPAR,
+                Token::COMMA,
+                Token::PLUS,
+                Token::MINUS,
+                Token::STAR,
+                Token::BANG,
+                Token::TILDE,
+                Token::CARET,
+                Token::AND,
+                Token::PIPE,
+                Token::SEMI,
+                Token::EQ,
+                Token::EQEQ,
+                Token::LT,
+                Token::GT,
+                Token::LTEQ,
+                Token::LTMINUS,
+                Token::MINUSGT,
+                Token::EQGT,
+                Token::COLONCOLON,
+                Token::COLON,
+                Token::UNDERSCORE,
+                Token::FUN,
+                Token::WITHLOCAL,
+                Token::NULLPTR,
+                Token::IF,
+                Token::THEN,
+                Token::ELSE,
+                Token::DO,
+                Token::DONE,
+                Token::WHILE,
+                Token::RETURN,
+                Token::SET,
+                Token::ALLOC,
+                Token::FREE,
+                Token::MATCH,
+                Token::WITH,
+                Token::END,
+                Token::INDUCTIVE,
+                Token::DEF,
+                Token::REC,
+                Token::LET,
+                Token::IN,
+                Token::INT,
+                Token::PTR,
+                Token::NUM(0),
+                Token::NUM(1),
+                Token::NUM(2),
+                Token::NUM(42),
+                Token::NUM(999),
+                Token::IDENT(intern("foo")),
+                Token::IDENT(intern("bar")),
+                Token::IDENT(intern("baz")),
+                Token::IDENT(intern("FOO_BAR_42_baz")),
+            ]
+        )
     }
 
     #[test]
     fn test_comments() {
         let data = "foo //bar baz 42 /* aa */ bb \n foo/*  */bar baz";
         let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
-        assert_eq!(res, [
-            Token::IDENT(intern("foo")),
-            Token::IDENT(intern("foo")),
-            Token::IDENT(intern("bar")),
-            Token::IDENT(intern("baz"))
-        ])
+        assert_eq!(
+            res,
+            [
+                Token::IDENT(intern("foo")),
+                Token::IDENT(intern("foo")),
+                Token::IDENT(intern("bar")),
+                Token::IDENT(intern("baz"))
+            ]
+        )
     }
 }

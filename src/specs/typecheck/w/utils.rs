@@ -8,10 +8,6 @@ use std::{
 
 use crate::specs::checked_ast::types::{Generics, PolyType, Type};
 
-trait Union {
-    fn union(&self, other: &Self) -> Self;
-}
-
 pub trait TypeLike {
     type ApplyResult<'a>
     where
@@ -58,22 +54,6 @@ impl<T: TypeLike> TypeLike for Box<T> {
         globals: &GlobalSubst,
     ) -> R {
         (**self).fold_vars(f, r, c, globals)
-    }
-}
-
-/// Implement union for HashMap such that the value in `self` is used over the value in `other` in
-/// the event of a collision.
-impl<K, V> Union for HashMap<K, V>
-where
-    K: Clone + Eq + Hash,
-    V: Clone,
-{
-    fn union(&self, other: &Self) -> Self {
-        let mut res = self.clone();
-        for (key, value) in other {
-            res.entry(key.clone()).or_insert(value.clone());
-        }
-        res
     }
 }
 

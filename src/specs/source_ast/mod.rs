@@ -61,7 +61,12 @@ pub struct SourceMatchArm {
 }
 
 pub struct SourceConstDef {
-    name: IStr,
-    ty: SourcePolyType,
-    value: Box<SourceExpr>,
+    pub name: IStr,
+    pub ty: SourcePolyType,
+    pub value: Box<SourceExpr>,
+}
+
+pub enum SourceDef {
+    Inductives(SourceInductives),
+    Const(SourceConstDef),
 }
