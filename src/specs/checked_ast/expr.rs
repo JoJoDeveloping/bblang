@@ -9,7 +9,7 @@ use super::types::{PolyType, Type};
 #[derive(Clone, Debug)]
 pub enum Expr {
     Var(IStr),
-    Lambda(Option<IStr>, IStr, Rc<Type>, Box<Expr>),
+    Lambda(Option<IStr>, IStr, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
     Let(IStr, Box<PolyType>, Box<Expr>, Box<Expr>),
     IndConst(IStr, IStr, Vec<Rc<Type>>, Vec<Box<Expr>>),

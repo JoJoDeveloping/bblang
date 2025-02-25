@@ -106,7 +106,7 @@ impl<'a> LocalCtx<'a> {
                     .subst
                     .unify(res_ty.clone(), res_ty2)
                     .map_err(|x| (x, inexpr.1))?;
-                (ty, Expr::Lambda(rec, arg, arg_ty, Box::new(body)))
+                (ty, Expr::Lambda(rec, arg, Box::new(body)))
             }
             SourceExpr::App(efn, earg) => {
                 let (t1, efn) = self.check_expr(globals, efn)?;
@@ -322,8 +322,7 @@ impl GlobalCtx {
     pub fn resolve_expr_fully(&self, expr: &mut Expr, allowed_free_vars: &HashSet<TypeVar>) {
         match expr {
             Expr::Var(_) => (),
-            Expr::Lambda(_, _, ty, body) => {
-                self.resolve_ty_fully(ty, allowed_free_vars);
+            Expr::Lambda(_, _, body) => {
                 self.resolve_expr_fully(body, allowed_free_vars);
             }
             Expr::App(expr1, expr2) => {

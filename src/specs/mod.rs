@@ -7,6 +7,7 @@ use crate::{
     utils::string_interner::intern,
 };
 
+mod builtin;
 pub mod checked_ast;
 mod exec;
 pub mod source_ast;

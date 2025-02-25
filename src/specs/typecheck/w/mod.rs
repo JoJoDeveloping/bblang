@@ -8,7 +8,10 @@ use std::{
 use utils::{GlobalSubst, TypeLike, TypeVar, TypeVarGen};
 
 use crate::{
-    specs::checked_ast::types::{Inductive, Inductives, PolyType, Type},
+    specs::{
+        builtin::populate_tc_globals,
+        checked_ast::types::{Inductive, Inductives, PolyType, Type},
+    },
     utils::string_interner::IStr,
 };
 
@@ -179,12 +182,14 @@ pub struct GlobalCtx {
 
 impl GlobalCtx {
     pub fn new() -> Self {
-        Self {
+        let mut this = Self {
             type_defs: TypeCtx::new(),
             global_defs: HashMap::new(),
             name_generator: TypeVarGen::new(),
             subst: GlobalSubst::new(),
-        }
+        };
+        populate_tc_globals(&mut this);
+        this
     }
 }
 

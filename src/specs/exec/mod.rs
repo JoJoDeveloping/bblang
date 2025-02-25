@@ -9,6 +9,7 @@ use num_bigint::BigInt;
 use crate::utils::string_interner::IStr;
 
 use super::{
+    builtin::populate_exec_builtins,
     checked_ast::expr::{ConstDef, Expr},
     typecheck::w::TypeCtx,
 };
@@ -36,11 +37,13 @@ pub struct ExecCtx {
 }
 impl ExecCtx {
     pub fn new(types: TypeCtx) -> Self {
-        Self {
+        let mut this = Self {
             _types: types,
             globals: HashMap::new(),
             globals_order: Vec::new(),
-        }
+        };
+        populate_exec_builtins(&mut this);
+        this
     }
 
     pub fn consume_global(&mut self, global: ConstDef) {
@@ -88,7 +91,7 @@ impl<'a> ExecLocalCtx<'a> {
                 Some(k) => k,
                 None => globals.globals.get(istr).unwrap().clone(),
             },
-            Expr::Lambda(rec, arg, _, body) => Rc::new(Value::Lambda {
+            Expr::Lambda(rec, arg, body) => Rc::new(Value::Lambda {
                 rec: *rec,
                 arg: *arg,
                 body: body.clone(),
@@ -162,7 +165,7 @@ impl Expr {
     fn free_vars(&self) -> HashSet<IStr> {
         match self {
             Expr::Var(istr) => [*istr].iter().copied().collect(),
-            Expr::Lambda(rec, arg, _, expr) => {
+            Expr::Lambda(rec, arg, expr) => {
                 let mut res = expr.free_vars();
                 res.remove(arg);
                 if let Some(rec) = rec {
