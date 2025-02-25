@@ -32,11 +32,18 @@ pub struct Constructor {
 #[derive(Debug)]
 pub struct Inductives(pub Vec<Rc<Inductive>>);
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Builtin {
+    Int,
+    Ptr,
+}
+
 #[derive(Clone, Debug)]
 pub enum Type {
     Inductive(IStr, Vec<Rc<Type>>),
     TypeVar(TypeVar),
     Arrow(Rc<Type>, Rc<Type>),
+    Builtin(Builtin),
 }
 
 #[derive(Clone, Debug)]

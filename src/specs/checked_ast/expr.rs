@@ -1,5 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
+use num_bigint::BigInt;
+
 use crate::utils::string_interner::IStr;
 
 use super::types::{PolyType, Type};
@@ -12,6 +14,8 @@ pub enum Expr {
     Let(IStr, Box<PolyType>, Box<Expr>, Box<Expr>),
     IndConst(IStr, IStr, Vec<Rc<Type>>, Vec<Box<Expr>>),
     IndMatch(Box<Expr>, IStr, HashMap<IStr, MatchArm>),
+    NumConst(BigInt),
+    Builtin(IStr, Vec<Box<Expr>>),
 }
 
 #[derive(Clone, Debug)]

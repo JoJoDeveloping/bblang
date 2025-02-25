@@ -3,7 +3,9 @@ use std::{collections::HashMap, rc::Rc};
 use crate::{
     parse::Span,
     specs::{
-        checked_ast::types::{Constructor, Generics, Inductive, Inductives, PolyType, Type},
+        checked_ast::types::{
+            Builtin, Constructor, Generics, Inductive, Inductives, PolyType, Type,
+        },
         source_ast::{
             SourceConstructor, SourceGenerics, SourceInductives, SourceType, SourceTypeBox,
         },
@@ -118,6 +120,8 @@ impl<'a> LocalCtx<'a> {
                 self.check_type(globals, dom)?,
                 self.check_type(globals, cod)?,
             ),
+            SourceType::BuiltinInt => Type::Builtin(Builtin::Int),
+            SourceType::BuiltinPtr => Type::Builtin(Builtin::Ptr),
         }))
     }
 
@@ -165,6 +169,7 @@ impl Type {
                 None => Rc::new(Type::TypeVar(*tv)),
             },
             Type::Arrow(t1, t2) => Rc::new(Type::Arrow(t1.subst(apply), t2.subst(apply))),
+            Type::Builtin(x) => Rc::new(Type::Builtin(*x)),
         }
     }
 }

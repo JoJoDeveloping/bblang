@@ -4,6 +4,8 @@ use std::{
     rc::Rc,
 };
 
+use num_bigint::BigInt;
+
 use crate::utils::string_interner::IStr;
 
 use super::{
@@ -24,6 +26,7 @@ pub enum Value {
         body: Box<Expr>,
         captures: HashMap<IStr, Rc<Value>>,
     },
+    NumValue(BigInt),
 }
 #[derive(Debug)]
 pub struct ExecCtx {
@@ -136,6 +139,14 @@ impl<'a> ExecLocalCtx<'a> {
                 let substi = arm.vars.iter().copied().zip(args.iter().cloned()).collect();
                 self.push(substi).exec(globals, &arm.expr)
             }
+            Expr::NumConst(x) => Rc::new(Value::NumValue(x.clone())),
+            Expr::Builtin(_, args) => {
+                let _args: Vec<_> = args
+                    .iter()
+                    .map(|x: &Box<Expr>| self.exec(globals, x))
+                    .collect();
+                todo!()
+            }
         }
     }
 
@@ -174,7 +185,7 @@ impl Expr {
                 });
                 res
             }
-            Expr::IndConst(_, _, _, exprs) => {
+            Expr::IndConst(_, _, _, exprs) | Expr::Builtin(_, exprs) => {
                 let mut res = HashSet::new();
                 for e in exprs {
                     e.free_vars().into_iter().for_each(|x| {
@@ -196,6 +207,7 @@ impl Expr {
                 }
                 res
             }
+            Expr::NumConst(_) => HashSet::new(),
         }
     }
 }
@@ -222,6 +234,7 @@ impl Display for Value {
                 body: _,
                 captures: _,
             } => write!(f, "fn"),
+            Value::NumValue(x) => Display::fmt(x, f),
         }
     }
 }

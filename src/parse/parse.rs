@@ -420,6 +420,8 @@ impl Parser {
                 let spec = self.parse_comma_separated(Token::GT, Self::parse_source_type);
                 Box::new((SourceType::Inductive(name, spec), (begin, self.endpos())))
             }
+            Some(Token::INT) => Box::new((SourceType::BuiltinInt, (begin, self.endpos()))),
+            Some(Token::PTR) => Box::new((SourceType::BuiltinPtr, (begin, self.endpos()))),
             got => self.otok_error("expected (spec) type", got),
         }
     }
@@ -465,7 +467,13 @@ impl Parser {
         let begin = self.pos();
         let mut res = self.parse_spec_base_expr();
         while let Some(
-            Token::MATCH | Token::LET | Token::FUN | Token::REC | Token::LPAR | Token::IDENT(_),
+            Token::MATCH
+            | Token::LET
+            | Token::FUN
+            | Token::REC
+            | Token::LPAR
+            | Token::IDENT(_)
+            | Token::NUM(_),
         ) = self.peek_token()
         {
             res = Box::new((
@@ -572,6 +580,7 @@ impl Parser {
                         SourceExpr::Var(x)
                     }
                 }
+                Some(Token::NUM(x)) => SourceExpr::NumLiteral(x.into()),
                 got => self.otok_error("expected (spec) expression", got),
             },
             (begin, self.endpos()),

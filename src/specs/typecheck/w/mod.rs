@@ -36,6 +36,7 @@ impl TypeLike for Type {
                 None => f(*x),
             },
             Type::Arrow(a, b) => c(a.fold_vars(f, r, c, globals), b.fold_vars(f, r, c, globals)),
+            Type::Builtin(_) => r(),
         }
     }
 }
@@ -79,6 +80,7 @@ impl GlobalSubst {
                 }
                 Ok(())
             }
+            (Type::Builtin(b1), Type::Builtin(b2)) if b1 == b2 => Ok(()),
 
             // (Type::BoundVar(v1), Type::BoundVar(v2)) if v1 == v2 => Ok(Subst::new()),
             (Type::TypeVar(v), _) => self.bind(*v, ty2),
@@ -129,6 +131,7 @@ impl GlobalSubst {
                 Rc::new(self.resolve_fully(&**t1)),
                 Rc::new(self.resolve_fully(&**t2)),
             ),
+            Type::Builtin(b) => Type::Builtin(*b),
         }
     }
 }

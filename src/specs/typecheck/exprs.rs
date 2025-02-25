@@ -8,7 +8,7 @@ use crate::{
     specs::{
         checked_ast::{
             expr::{ConstDef, Expr, MatchArm},
-            types::{Generics, PolyType, Type},
+            types::{Builtin, Generics, PolyType, Type},
         },
         source_ast::{SourceConstDef, SourceExpr, SourceExprBox},
         typecheck::w::utils::TypeVar,
@@ -313,6 +313,7 @@ impl<'a> LocalCtx<'a> {
                     Expr::IndMatch(Box::new(discriminee), ind.name, new_arms),
                 )
             }
+            SourceExpr::NumLiteral(x) => (Rc::new(Type::Builtin(Builtin::Int)), Expr::NumConst(x)),
         })
     }
 }
@@ -349,6 +350,12 @@ impl GlobalCtx {
                 rows.iter_mut().for_each(|(_, arm)| {
                     self.resolve_expr_fully(&mut *arm.expr, allowed_free_vars)
                 });
+            }
+            Expr::NumConst(_) => {}
+            Expr::Builtin(_, exprs) => {
+                exprs
+                    .iter_mut()
+                    .for_each(|e| self.resolve_expr_fully(e, allowed_free_vars));
             }
         }
     }

@@ -39,3 +39,5 @@ def test4 : Bool = eq fourtytwo fourtytwo
 def examplelist : List<Nat> = cons three (cons six (cons O (cons seven (cons two nil))))
 def sortedlist : List<Nat> = qsort examplelist
 def diverge : forall A B, A -> B = rec foo bar => foo bar
+
+def numtest : int = 42

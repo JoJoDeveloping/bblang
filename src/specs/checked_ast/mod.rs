@@ -22,7 +22,9 @@ impl TypePrettify {
     fn new() -> Self {
         Self {
             bound: HashMap::new(),
-            taken: [intern("'")].into_iter().collect(),
+            taken: [intern("'"), intern("int"), intern("ptr")]
+                .into_iter()
+                .collect(),
             next: 0,
         }
     }
@@ -85,6 +87,10 @@ impl Type {
                 }
                 Ok(())
             }
+            Type::Builtin(b) => match b {
+                types::Builtin::Int => write!(f, "int"),
+                types::Builtin::Ptr => write!(f, "ptr"),
+            },
         }
     }
 }

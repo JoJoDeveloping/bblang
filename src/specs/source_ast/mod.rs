@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use num_bigint::BigInt;
+
 use crate::{parse::Span, utils::string_interner::IStr};
 
 pub struct SourceGenerics {
@@ -31,6 +33,8 @@ pub enum SourceType {
     Inductive(IStr, Vec<SourceTypeBox>),
     BoundVar(IStr),
     Arrow(SourceTypeBox, SourceTypeBox),
+    BuiltinInt,
+    BuiltinPtr,
 }
 
 pub struct SourcePolyType {
@@ -56,6 +60,7 @@ pub enum SourceExpr {
         Vec<SourceExprBox>,
     ),
     IndMatch(SourceExprBox, Option<IStr>, HashMap<IStr, SourceMatchArm>),
+    NumLiteral(BigInt),
 }
 
 pub struct SourceMatchArm {
