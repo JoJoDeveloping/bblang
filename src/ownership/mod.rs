@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{progs::ast::Pointer, specs::exec::InfPointer};
+use crate::specs::exec::InfPointer;
 
 #[derive(Debug)]
 pub struct OwnershipInfo {

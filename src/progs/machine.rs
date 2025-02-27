@@ -7,13 +7,10 @@ use std::{
 };
 
 use crate::{
-    specs::{
-        exec::{
+    specs::exec::{
             self, ExecCtx, ExecLocalCtx, InfPointer,
             monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
         },
-        typecheck::w::{GlobalCtx, LocalCtx},
-    },
     utils::{
         SwitchToDisplay,
         string_interner::{IStr, intern},

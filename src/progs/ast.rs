@@ -8,8 +8,6 @@ use crate::{
     parse::Span,
     specs::{
         checked_ast::expr::ConstDef,
-        exec::ExecCtx,
-        source_ast::{FunctionSpec, SourceConstDef, SourceDef},
         typecheck::w::GlobalCtx,
     },
     utils::string_interner::IStr,
