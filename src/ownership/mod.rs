@@ -24,4 +24,8 @@ impl OwnershipInfo {
     pub fn remove(&mut self, p: &InfPointer) -> bool {
         self.allowed_accessible.remove(&p)
     }
+
+    pub(crate) fn leaks(&self) -> bool {
+        !self.allowed_accessible.is_empty()
+    }
 }

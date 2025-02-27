@@ -64,9 +64,9 @@ impl Memory {
         }
     }
 
-    pub fn dealloc(&mut self, blk: u32) -> Result<(), MachineError> {
+    pub fn dealloc(&mut self, blk: u32) -> Result<usize, MachineError> {
         match self.allocs.remove(&blk) {
-            Some(_) => Ok(()),
+            Some(x) => Ok(x.data.len()),
             None => Err(MachineError::new(
                 MachineErrorKind::MemoryUnsafety,
                 format!("double free for ({blk}, 0)"),

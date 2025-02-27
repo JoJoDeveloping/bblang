@@ -34,6 +34,7 @@ pub fn owned<'b>(v1: &Rc<Value>, args: &mut MonadArg<'b>) -> SpecMonad<Rc<Value>
         panic!("Call to Owned in wrong mode!");
     };
     if !aa.extract_from.remove(ptr) {
+        eprintln!("{:?} -> {:?}", aa.extract_from, aa.extract_into);
         eprintln!("Missing ownership {ptr:?}");
         return Err(SpecMonadResidual::MissingOwnership());
     }

@@ -153,20 +153,13 @@ impl CompilationContext {
         spec_globals: &mut GlobalCtx,
     ) -> CompiledFunctionSpec {
         let local_ctx = LocalCtx::new();
-        let nvs = spec
-            .arg_names
-            .iter()
-            .map(|x| {
-                (
-                    *x,
-                    PolyType::without_binders(Rc::new(Type::Inductive(intern("Val"), vec![]))),
-                )
-            })
-            .collect();
+        let valty = PolyType::without_binders(Rc::new(Type::Inductive(intern("Val"), vec![])));
+        let nvs = spec.arg_names.iter().map(|x| (*x, valty.clone())).collect();
         let mut local_ctx = local_ctx.push_vars(nvs);
         let pre = local_ctx
             .check_const_defs_as_let_chain(spec_globals, spec.pre)
             .unwrap();
+        let mut local_ctx = local_ctx.push_vars([(intern("result"), valty)].into_iter().collect());
         let post = local_ctx
             .check_const_defs_as_let_chain(spec_globals, spec.post)
             .unwrap();

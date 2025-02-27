@@ -336,6 +336,7 @@ impl Parser {
                     }
                 }
                 Some(Token::SPEC) => {
+                    self.next_token();
                     spec_stuff.extend(self.parse_spec_program());
                     self.expect(Token::END);
                 }
@@ -559,6 +560,7 @@ impl Parser {
                     let mut arms = HashMap::new();
                     match self.peek_token() {
                         Some(Token::END) => {
+                            self.next_token();
                             return Box::new((
                                 SourceExpr::IndMatch(discriminee, ty, arms),
                                 (begin, self.endpos()),

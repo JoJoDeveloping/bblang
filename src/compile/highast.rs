@@ -43,3 +43,21 @@ pub struct Program {
     pub functions: HashMap<IStr, Function>,
     pub spec_stuff: Vec<SourceDef>,
 }
+
+impl Program {
+    pub fn new() -> Self {
+        Self {
+            functions: HashMap::new(),
+            spec_stuff: Vec::new(),
+        }
+    }
+
+    pub fn merge(&mut self, mut other: Self) {
+        for (k, v) in other.functions {
+            if let Some(_) = self.functions.insert(k, v) {
+                panic!("Linking error: {k} is duplicate function");
+            }
+        }
+        self.spec_stuff.append(&mut other.spec_stuff);
+    }
+}

@@ -58,6 +58,7 @@ impl ExecCtx {
     ) -> SpecMonad<()> {
         let localctx = ExecLocalCtx::new();
         let res = localctx.exec(&self, monad, &global.value)?;
+        println!("{}: {} = {}", global.name, global.ty, res);
         self.globals.insert(global.name, res);
         self.globals_order.push(global.name);
         Ok(())
@@ -196,6 +197,7 @@ impl<'a> ExecLocalCtx<'a> {
     ) -> SpecMonad<()> {
         for def in defs {
             let v = self.exec(globals, monad, &def.value)?;
+            println!(" let {}: {} = {}", def.name, def.ty, v);
             self.push_arg(def.name, v);
         }
         Ok(())

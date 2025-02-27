@@ -8,9 +8,9 @@ use std::{
 
 use crate::{
     specs::exec::{
-            self, ExecCtx, ExecLocalCtx, InfPointer,
-            monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
-        },
+        self, ExecCtx, ExecLocalCtx, InfPointer,
+        monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
+    },
     utils::{
         SwitchToDisplay,
         string_interner::{IStr, intern},
@@ -257,6 +257,10 @@ impl CallFrame {
         self.spec_stuff
             .0
             .execute_const_defs_as_lets(global, &mut Some(combined), &prog.pre)?;
+        println!(
+            "Having just called {}, having ownership {:?}",
+            self.function, self.spec_stuff.1
+        );
         Ok(())
     }
 
@@ -266,7 +270,12 @@ impl CallFrame {
         global: &ExecCtx,
         prog: &CompiledFunctionSpec,
         global_mem: &Memory,
+        result: Value,
     ) -> SpecMonad<()> {
+        println!(
+            "Before returning from {}, having ownership {:?}",
+            self.function, self.spec_stuff.1
+        );
         let combined = MonadOwnershipArg {
             extract_from: &mut self.spec_stuff.1,
             extract_into: parent_ownership,
@@ -275,11 +284,16 @@ impl CallFrame {
         };
         self.spec_stuff
             .0
-            .execute_const_defs_as_lets(global, &mut Some(combined), &prog.pre)?;
-        println!(
-            "Upon returning from {}, leaving ownership {:?}",
-            self.function, self.spec_stuff.1
-        );
+            .push_arg(intern("result"), value_to_value(result));
+        self.spec_stuff
+            .0
+            .execute_const_defs_as_lets(global, &mut Some(combined), &prog.post)?;
+        if self.spec_stuff.1.leaks() {
+            println!(
+                "Upon returning from {}, leaking ownership {:?}",
+                self.function, self.spec_stuff.1
+            );
+        }
         Ok(())
     }
 }
@@ -294,10 +308,18 @@ impl Statement {
                 cf.set_local(*res, op1.eval(cf)?.eval_binop(*bin_op, op2.eval(cf)?)?)
             }
             Statement::Load(res, operand) => {
-                cf.set_local(*res, mem.load(operand.eval(cf)?.as_pointer()?)?)
+                let ptr = operand.eval(cf)?.as_pointer()?;
+                if !cf.spec_stuff.1.ensure(&InfPointer(ptr.0, ptr.1.into())) {
+                    panic!("Read memory at {ptr:?} without owning it!")
+                }
+                cf.set_local(*res, mem.load(ptr)?)
             }
             Statement::Store(addr, data) => {
-                mem.store(addr.eval(cf)?.as_pointer()?, data.eval(cf)?)?
+                let ptr = addr.eval(cf)?.as_pointer()?;
+                if !cf.spec_stuff.1.ensure(&InfPointer(ptr.0, ptr.1.into())) {
+                    panic!("Wrote memory at {ptr:?} without owning it!")
+                }
+                mem.store(ptr, data.eval(cf)?)?
             }
             Statement::FunCall(_, _, _) => unreachable!(),
             Statement::Alloc(res, operand) => {
@@ -314,6 +336,9 @@ impl Statement {
                         "out of memory".to_string(),
                     )
                 })?;
+                for i in 0..len {
+                    cf.spec_stuff.1.insert(&InfPointer(blk, i.into()));
+                }
                 cf.set_local(*res, Value::Loc(Pointer(blk, 0)));
             }
             Statement::Free(operand) => {
@@ -324,7 +349,14 @@ impl Statement {
                         format!("free called with {ptr:?}, which is offset"),
                     ));
                 }
-                mem.dealloc(ptr.0)?;
+                let waslen = mem.dealloc(ptr.0)?;
+
+                for i in 0..waslen {
+                    let ptr = InfPointer(ptr.0, i.into());
+                    if !cf.spec_stuff.1.remove(&ptr) {
+                        panic!("Freed memory at {ptr:?} without owning it!")
+                    }
+                }
             }
         };
         Ok(())
@@ -385,14 +417,17 @@ impl MachineState {
                     };
 
                     if let Some(spec) = &cur_func.spec {
-                        old_frame
-                            .execute_leave_spec(
-                                &mut cf.spec_stuff.1,
-                                &self.specs_stuff,
-                                spec,
-                                &self.memory,
-                            )
-                            .unwrap();
+                        let spec = old_frame.execute_leave_spec(
+                            &mut cf.spec_stuff.1,
+                            &self.specs_stuff,
+                            spec,
+                            &self.memory,
+                            rv.clone(),
+                        );
+
+                        if let Err(e) = spec {
+                            panic!("Postcondition of {} violated: {:?}", old_frame.function, e);
+                        }
                     } else {
                         cf.spec_stuff.1 = old_frame.spec_stuff.1;
                     }
@@ -438,14 +473,16 @@ impl MachineState {
                         ncf.locals.insert(idx, arg);
                     }
                     if let Some(spec) = &new_func.spec {
-                        ncf.execute_enter_spec(
+                        let spec = ncf.execute_enter_spec(
                             &mut cf.spec_stuff.1,
                             &self.specs_stuff,
                             spec,
                             newargs,
                             &self.memory,
-                        )
-                        .unwrap();
+                        );
+                        if let Err(e) = spec {
+                            panic!("Precondition of {} violated: {:?}", ncf.function, e);
+                        }
                     } else {
                         let oi = mem::replace(&mut cf.spec_stuff.1, OwnershipInfo::new());
                         ncf.spec_stuff = (ExecLocalCtx::new(), oi);
