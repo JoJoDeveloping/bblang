@@ -4,11 +4,11 @@ use crate::{
     compile::highast::{BoxExpr, Expr, Function, Program},
     progs::ast::{BinOp, Value},
     specs::source_ast::{
-        SourceConstDef, SourceConstructor, SourceDef, SourceExpr, SourceExprBox, SourceGenerics,
-        SourceInductive, SourceInductives, SourceMatchArm, SourcePolyType, SourceType,
-        SourceTypeBox,
+        FunctionSpec, SourceConstDef, SourceConstructor, SourceDef, SourceExpr, SourceExprBox,
+        SourceGenerics, SourceInductive, SourceInductives, SourceMatchArm, SourcePolyType,
+        SourceType, SourceTypeBox,
     },
-    utils::string_interner::IStr,
+    utils::string_interner::{IStr, intern},
 };
 
 use super::lex::{Lexer, Position, Token};
@@ -147,6 +147,35 @@ impl Parser {
         let name = self.expect_ident();
         self.expect(Token::LPAR);
         let args = self.parse_comma_separated_idents(Token::RPAR);
+        let spec = if let Some(Token::SPEC) = self.peek_token() {
+            self.next_token();
+            let mut res = HashMap::new();
+            loop {
+                let name = self.expect_ident();
+                self.expect(Token::COLON);
+                let prog = self.parse_spec_const_defs();
+                if res.insert(name, prog).is_some() {
+                    self.error(&format!("Duplicate spec kind {name}"))
+                }
+                if let Some(Token::SEMI) = self.peek_token() {
+                    self.next_token();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Token::END);
+            let rres = FunctionSpec {
+                pre: res.remove(&intern("pre")).unwrap_or_default(),
+                post: res.remove(&intern("post")).unwrap_or_default(),
+                arg_names: args.clone(),
+            };
+            if !res.is_empty() {
+                self.error(&format!("unused spec kind {name}"))
+            }
+            Some(rres)
+        } else {
+            None
+        };
         let locals = match self.next_token() {
             Some(Token::WITHLOCAL) => self.parse_comma_separated_idents(Token::EQ),
             Some(Token::EQ) => Vec::new(),
@@ -159,6 +188,7 @@ impl Parser {
             locals: locals.into_iter().collect(),
             code,
             span: (start, self.endpos()),
+            spec,
         }
     }
 
@@ -295,17 +325,46 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Program {
         let mut functions = HashMap::new();
+        let mut spec_stuff = Vec::new();
         while self.peek_token().is_some() {
-            let func = self.parse_function();
-            let name = func.name;
-            if functions.insert(func.name, func).is_some() {
-                self.error(&format!("function {name} defined twice"))
+            match self.peek_token() {
+                Some(Token::FUN) => {
+                    let func = self.parse_function();
+                    let name = func.name;
+                    if functions.insert(func.name, func).is_some() {
+                        self.error(&format!("function {name} defined twice"))
+                    }
+                }
+                Some(Token::SPEC) => {
+                    spec_stuff.extend(self.parse_spec_program());
+                    self.expect(Token::END);
+                }
+                got => self.otok_error("Expected function or spec block", got),
             }
         }
-        Program { functions }
+        Program {
+            functions,
+            spec_stuff,
+        }
     }
 
-    pub fn parse_spec_program(&mut self) -> Vec<SourceDef> {
+    fn parse_spec_const_defs(&mut self) -> Vec<SourceConstDef> {
+        let mut res = Vec::new();
+        while let Some(Token::DEF) = self.peek_token() {
+            res.push(self.parse_const_item());
+        }
+        res
+    }
+
+    fn parse_spec_program(&mut self) -> Vec<SourceDef> {
+        let mut res = Vec::new();
+        while let Some(Token::DEF | Token::INDUCTIVE) = self.peek_token() {
+            res.push(self.parse_spec_item());
+        }
+        res
+    }
+
+    pub fn parse_spec_program_eager(&mut self) -> Vec<SourceDef> {
         let mut res = Vec::new();
         while let Some(_) = self.peek_token() {
             res.push(self.parse_spec_item());

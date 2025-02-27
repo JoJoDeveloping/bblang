@@ -1,9 +1,22 @@
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    collections::{BTreeSet, HashMap},
+    rc::Rc,
+};
 
 use crate::{
     parse::Span,
-    progs::ast::{self, BasicBlock, DebugInfo, Operand, Statement, Terminator},
-    utils::string_interner::IStr,
+    progs::ast::{
+        self, BasicBlock, CompiledFunctionSpec, DebugInfo, Operand, Statement, Terminator,
+    },
+    specs::{
+        checked_ast::{
+            expr::ConstDef,
+            types::{PolyType, Type},
+        },
+        source_ast::{FunctionSpec, SourceDef},
+        typecheck::w::{GlobalCtx, LocalCtx},
+    },
+    utils::string_interner::{IStr, intern},
 };
 
 use super::highast::{Expr, Function, Program};
@@ -60,6 +73,7 @@ struct CompilationContext {
     blocks: Vec<IncompleteBB>,
     current_span: Span,
     debug_info: DebugInfo,
+    spec: Option<FunctionSpec>,
 }
 
 impl CompilationContext {
@@ -82,7 +96,12 @@ impl CompilationContext {
             blocks: vec![IncompleteBB::new()],
             current_span: fun.span,
             debug_info: debug_info,
+            spec: None,
         }
+    }
+
+    pub fn set_spec(&mut self, spec: FunctionSpec) {
+        self.spec = Some(spec);
     }
 
     pub fn new_temp(&mut self) -> u32 {
@@ -129,12 +148,42 @@ impl CompilationContext {
         self.current_block = new_block;
     }
 
-    pub fn build(self) -> ast::Function {
+    fn compile_spec_stuff(
+        spec: FunctionSpec,
+        spec_globals: &mut GlobalCtx,
+    ) -> CompiledFunctionSpec {
+        let local_ctx = LocalCtx::new();
+        let nvs = spec
+            .arg_names
+            .iter()
+            .map(|x| {
+                (
+                    *x,
+                    PolyType::without_binders(Rc::new(Type::Inductive(intern("Val"), vec![]))),
+                )
+            })
+            .collect();
+        let mut local_ctx = local_ctx.push_vars(nvs);
+        let pre = local_ctx
+            .check_const_defs_as_let_chain(spec_globals, spec.pre)
+            .unwrap();
+        let post = local_ctx
+            .check_const_defs_as_let_chain(spec_globals, spec.post)
+            .unwrap();
+        CompiledFunctionSpec {
+            arg_names: spec.arg_names,
+            pre,
+            post,
+        }
+    }
+
+    pub fn build(self, spec_globals: &mut GlobalCtx) -> ast::Function {
         assert!(self.temps.is_empty());
         ast::Function {
             name: self.fun_name,
             blocks: self.blocks.into_iter().map(IncompleteBB::build).collect(),
             debug_info: self.debug_info,
+            spec: self.spec.map(|x| Self::compile_spec_stuff(x, spec_globals)),
         }
     }
 
@@ -146,13 +195,16 @@ impl CompilationContext {
 }
 
 impl Function {
-    pub fn compile(self) -> ast::Function {
+    pub fn compile(self, specs_stuff: &mut GlobalCtx) -> ast::Function {
         let mut cc = CompilationContext::new(&self);
         let temp = cc.new_temp();
         self.code.compile(&mut cc, temp);
         cc.finish_block(Terminator::Return(Operand::Local(temp)));
         cc.finish_temp(temp);
-        cc.build()
+        if let Some(spec) = self.spec {
+            cc.set_spec(spec);
+        }
+        cc.build(specs_stuff)
     }
 }
 
@@ -317,13 +369,21 @@ impl Expr {
 }
 
 impl Program {
+    fn compile_spec_stuff(spec_stuff: Vec<SourceDef>) -> (GlobalCtx, Vec<ConstDef>) {
+        let mut global = GlobalCtx::new();
+        let defs = global.check_defs(spec_stuff).unwrap();
+        (global, defs)
+    }
+
     pub fn compile(self) -> ast::Program {
+        let mut spec_stuff = Self::compile_spec_stuff(self.spec_stuff);
         ast::Program {
             funcs: self
                 .functions
                 .into_iter()
-                .map(|(x, y)| (x, y.compile()))
+                .map(|(x, y)| (x, y.compile(&mut spec_stuff.0)))
                 .collect(),
+            spec_stuff,
         }
     }
 }

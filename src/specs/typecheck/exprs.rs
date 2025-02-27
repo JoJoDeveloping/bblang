@@ -13,6 +13,7 @@ use crate::{
         source_ast::{SourceConstDef, SourceExpr, SourceExprBox},
         typecheck::w::utils::TypeVar,
     },
+    utils::string_interner::IStr,
 };
 
 use super::{
@@ -316,6 +317,24 @@ impl<'a> LocalCtx<'a> {
             SourceExpr::NumLiteral(x) => (Rc::new(Type::Builtin(Builtin::Int)), Expr::NumConst(x)),
         })
     }
+
+    pub fn check_constant(
+        &'a self,
+        globals: &mut GlobalCtx,
+        cnst: SourceConstDef,
+    ) -> Result<(PolyType, IStr, Expr)> {
+        let lctx = self;
+
+        let st = cnst.ty;
+        let (gen2, lctx) = lctx.enter_generics(cnst.pos, globals, st.binders)?;
+        let should_ty = lctx.check_type(globals, st.ty)?;
+        let (mut ty, mut value) =
+            lctx.check_let(cnst.pos, Some(gen2), should_ty, globals, cnst.value)?;
+        let polytybinders = ty.binders.names.iter().map(|x| x.0).collect();
+        globals.resolve_expr_fully(&mut value, &polytybinders);
+        globals.resolve_ty_fully(&mut ty.ty, &polytybinders);
+        Ok((ty, cnst.name, value))
+    }
 }
 
 impl GlobalCtx {
@@ -370,19 +389,13 @@ impl GlobalCtx {
 
     pub fn check_constant(&mut self, cnst: SourceConstDef) -> Result<ConstDef> {
         let lctx = LocalCtx::new();
-        let st = cnst.ty;
-        let (gen2, lctx) = lctx.enter_generics(cnst.pos, self, st.binders)?;
-        let should_ty = lctx.check_type(self, st.ty)?;
-        let (mut ty, mut value) =
-            lctx.check_let(cnst.pos, Some(gen2), should_ty, self, cnst.value)?;
-        let polytybinders = ty.binders.names.iter().map(|x| x.0).collect();
-        self.resolve_expr_fully(&mut value, &polytybinders);
-        self.resolve_ty_fully(&mut ty.ty, &polytybinders);
-        if let Some(_) = self.global_defs.insert(cnst.name, ty.clone()) {
-            return Err((TypeError::DuplicateGlobal(cnst.name), cnst.pos));
+        let pos = cnst.pos;
+        let (ty, name, value) = lctx.check_constant(self, cnst)?;
+        if let Some(_) = self.global_defs.insert(name, ty.clone()) {
+            return Err((TypeError::DuplicateGlobal(name), pos));
         }
         Ok(ConstDef {
-            name: cnst.name,
+            name,
             ty,
             value: Box::new(value),
         })

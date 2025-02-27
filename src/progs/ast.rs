@@ -1,6 +1,19 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    fmt::Display,
+};
 
-use crate::{parse::Span, utils::string_interner::IStr};
+use crate::{
+    parse::Span,
+    specs::{
+        checked_ast::expr::ConstDef,
+        exec::ExecCtx,
+        source_ast::{FunctionSpec, SourceConstDef, SourceDef},
+        typecheck::w::GlobalCtx,
+    },
+    utils::string_interner::IStr,
+};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Debug)]
 pub struct Pointer(pub u32, pub u32);
@@ -67,15 +80,35 @@ pub struct Function {
     pub name: IStr,
     pub blocks: Vec<BasicBlock>,
     pub debug_info: DebugInfo,
+    pub spec: Option<CompiledFunctionSpec>,
 }
 
-#[derive(Debug)]
+pub struct CompiledFunctionSpec {
+    pub arg_names: Vec<IStr>,
+    pub pre: Vec<ConstDef>,
+    pub post: Vec<ConstDef>,
+}
+
+impl Debug for CompiledFunctionSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompiledFunctionSpec").finish()
+    }
+}
+
+// #[derive(Debug)]
 pub struct Program {
     pub funcs: HashMap<IStr, Function>,
+    pub spec_stuff: (GlobalCtx, Vec<ConstDef>),
 }
 
 #[derive(Debug, Default)]
 pub struct DebugInfo {
     pub data: HashMap<(usize, usize), Span>,
     pub local_names: BTreeMap<u32, IStr>,
+}
+
+impl Display for Pointer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.0, self.1)
+    }
 }

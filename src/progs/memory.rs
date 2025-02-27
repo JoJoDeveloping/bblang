@@ -94,7 +94,7 @@ impl Memory {
         }
     }
 
-    pub fn load(&mut self, off: Pointer) -> Result<Value, MachineError> {
+    pub fn load(&self, off: Pointer) -> Result<Value, MachineError> {
         let data = &self
             .allocs
             .get(&off.0)

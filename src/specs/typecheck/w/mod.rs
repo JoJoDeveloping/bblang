@@ -8,9 +8,14 @@ use std::{
 use utils::{GlobalSubst, TypeLike, TypeVar, TypeVarGen};
 
 use crate::{
+    parse::Span,
     specs::{
         builtin::populate_tc_globals,
-        checked_ast::types::{Inductive, Inductives, PolyType, Type},
+        checked_ast::{
+            expr::ConstDef,
+            types::{Inductive, Inductives, PolyType, Type},
+        },
+        source_ast::SourceConstDef,
     },
     utils::string_interner::IStr,
 };
@@ -193,6 +198,7 @@ impl GlobalCtx {
     }
 }
 
+#[derive(Debug)]
 pub struct LocalCtx<'a> {
     parent: Option<&'a LocalCtx<'a>>,
     term_vars: HashMap<IStr, PolyType>,
@@ -240,6 +246,27 @@ impl<'a> LocalCtx<'a> {
 
     pub fn push_type_vars(&'a self, vars: HashMap<IStr, TypeVar>) -> Self {
         self.push(HashMap::new(), vars)
+    }
+
+    pub fn check_const_defs_as_let_chain(
+        &mut self,
+        globals: &mut GlobalCtx,
+        defs: Vec<SourceConstDef>,
+    ) -> Result<Vec<ConstDef>, (TypeError, Span)> {
+        let mut res = Vec::new();
+        for def in defs {
+            let pos = def.pos;
+            let (ty, name, value) = self.check_constant(globals, def)?;
+            if let Some(_) = self.term_vars.insert(name, ty.clone()) {
+                return Err((TypeError::DuplicateGlobal(name), pos));
+            }
+            res.push(ConstDef {
+                name,
+                ty,
+                value: Box::new(value),
+            });
+        }
+        Ok(res)
     }
 }
 

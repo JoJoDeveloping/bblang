@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use num_bigint::BigInt;
 
@@ -79,4 +79,22 @@ pub struct SourceConstDef {
 pub enum SourceDef {
     Inductives(SourceInductives),
     Const(SourceConstDef),
+}
+
+pub struct FunctionSpec {
+    pub arg_names: Vec<IStr>,
+    pub pre: Vec<SourceConstDef>,
+    pub post: Vec<SourceConstDef>,
+}
+
+impl Debug for FunctionSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FunctionSpec").finish()
+    }
+}
+
+impl Debug for SourceDef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceDef").finish()
+    }
 }

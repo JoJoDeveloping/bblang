@@ -9,6 +9,7 @@ use progs::{ast::Program, machine::MachineState};
 use utils::{read_file, string_interner::intern};
 pub mod compile;
 mod examples;
+pub mod ownership;
 pub mod parse;
 pub mod progs;
 pub mod specs;

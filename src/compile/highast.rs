@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     parse::Span,
     progs::ast::{BinOp, Value},
+    specs::source_ast::{FunctionSpec, SourceDef},
     utils::string_interner::IStr,
 };
 
@@ -34,9 +35,11 @@ pub struct Function {
     pub locals: Vec<IStr>,
     pub code: BoxExpr,
     pub span: Span,
+    pub spec: Option<FunctionSpec>,
 }
 
 #[derive(Debug)]
 pub struct Program {
     pub functions: HashMap<IStr, Function>,
+    pub spec_stuff: Vec<SourceDef>,
 }

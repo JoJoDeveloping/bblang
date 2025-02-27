@@ -1,13 +1,31 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
+    mem,
     ops::{BitAnd, BitOr, BitXor, Not},
+    rc::Rc,
 };
 
-use crate::utils::{SwitchToDisplay, string_interner::IStr};
+use crate::{
+    specs::{
+        exec::{
+            self, ExecCtx, ExecLocalCtx, InfPointer,
+            monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
+        },
+        typecheck::w::{GlobalCtx, LocalCtx},
+    },
+    utils::{
+        SwitchToDisplay,
+        string_interner::{IStr, intern},
+    },
+};
+
+use crate::ownership::OwnershipInfo;
 
 use super::{
-    ast::{BinOp, Operand, Pointer, Program, Statement, Terminator, UnOp, Value},
+    ast::{
+        BinOp, CompiledFunctionSpec, Operand, Pointer, Program, Statement, Terminator, UnOp, Value,
+    },
     errors::{MachineError, MachineErrorKind},
     extcalls::ExtcallHandler,
     memory::Memory,
@@ -19,6 +37,7 @@ pub struct CallFrame {
     bb: usize,
     offset: usize,
     locals: HashMap<u32, Value>,
+    spec_stuff: (ExecLocalCtx<'static>, OwnershipInfo),
 }
 
 pub struct MachineState {
@@ -26,6 +45,7 @@ pub struct MachineState {
     memory: Memory,
     code: Program,
     extcalls: ExtcallHandler,
+    specs_stuff: ExecCtx,
 }
 
 impl Debug for MachineState {
@@ -44,6 +64,7 @@ impl CallFrame {
             bb: 0,
             offset: 0,
             locals,
+            spec_stuff: (ExecLocalCtx::new(), OwnershipInfo::new()),
         }
     }
 }
@@ -185,9 +206,84 @@ impl Value {
     }
 }
 
+pub fn value_to_value(value: Value) -> Rc<exec::Value> {
+    Rc::new(match value {
+        Value::Int(i) => exec::Value::InductiveVal {
+            ty: intern("Val"),
+            constr: intern("Int"),
+            args: vec![Rc::new(exec::Value::NumValue(i.into()))],
+        },
+        Value::Loc(Pointer(blk, off)) => exec::Value::InductiveVal {
+            ty: intern("Val"),
+            constr: intern("Ptr"),
+            args: vec![Rc::new(exec::Value::InductiveVal {
+                ty: intern("Option"),
+                constr: intern("Some"),
+                args: vec![Rc::new(exec::Value::PtrValue(InfPointer(blk, off.into())))],
+            })],
+        },
+        Value::NullPointer => exec::Value::InductiveVal {
+            ty: intern("Val"),
+            constr: intern("Ptr"),
+            args: vec![Rc::new(exec::Value::InductiveVal {
+                ty: intern("Option"),
+                constr: intern("None"),
+                args: vec![],
+            })],
+        },
+    })
+}
+
 impl CallFrame {
     fn set_local(&mut self, loc: u32, to: Value) {
         self.locals.insert(loc, to);
+    }
+
+    fn execute_enter_spec(
+        &mut self,
+        old_ownership: &mut OwnershipInfo,
+        global: &ExecCtx,
+        prog: &CompiledFunctionSpec,
+        args: Vec<Value>,
+        global_mem: &Memory,
+    ) -> SpecMonad<()> {
+        let combined = MonadOwnershipArg {
+            extract_from: old_ownership,
+            extract_into: &mut self.spec_stuff.1,
+            mode: MonadFailMode::Assume,
+            memory: global_mem,
+        };
+        assert_eq!(args.len(), prog.arg_names.len());
+        for (name, arg) in prog.arg_names.iter().copied().zip(args.into_iter()) {
+            self.spec_stuff.0.push_arg(name, value_to_value(arg));
+        }
+        self.spec_stuff
+            .0
+            .execute_const_defs_as_lets(global, &mut Some(combined), &prog.pre)?;
+        Ok(())
+    }
+
+    fn execute_leave_spec(
+        &mut self,
+        parent_ownership: &mut OwnershipInfo,
+        global: &ExecCtx,
+        prog: &CompiledFunctionSpec,
+        global_mem: &Memory,
+    ) -> SpecMonad<()> {
+        let combined = MonadOwnershipArg {
+            extract_from: &mut self.spec_stuff.1,
+            extract_into: parent_ownership,
+            mode: MonadFailMode::Assert,
+            memory: global_mem,
+        };
+        self.spec_stuff
+            .0
+            .execute_const_defs_as_lets(global, &mut Some(combined), &prog.pre)?;
+        println!(
+            "Upon returning from {}, leaving ownership {:?}",
+            self.function, self.spec_stuff.1
+        );
+        Ok(())
     }
 }
 
@@ -284,12 +380,26 @@ impl MachineState {
             match cur_bb.term {
                 Terminator::Return(operand) => {
                     let rv = operand.eval(cf)?;
-                    self.frame.pop();
+                    let mut old_frame = self.frame.pop().unwrap();
 
                     let Some(cf) = self.frame.last_mut() else {
                         // we arrived at the bottom of the call stack, forward result driver
                         return Ok(Some(rv));
                     };
+
+                    if let Some(spec) = &cur_func.spec {
+                        old_frame
+                            .execute_leave_spec(
+                                &mut cf.spec_stuff.1,
+                                &self.specs_stuff,
+                                spec,
+                                &self.memory,
+                            )
+                            .unwrap();
+                    } else {
+                        cf.spec_stuff.1 = old_frame.spec_stuff.1;
+                    }
+
                     let cur_func = self.code.funcs.get(&cf.function).unwrap();
                     let cur_bb = cur_func.blocks.get(cf.bb).unwrap();
                     match cur_bb.insns[cf.offset] {
@@ -307,7 +417,7 @@ impl MachineState {
             let stmt = &cur_bb.insns[cf.offset];
             match stmt {
                 Statement::FunCall(idx, fnname, args) => {
-                    let Some(_) = self.code.funcs.get(fnname) else {
+                    let Some(new_func) = self.code.funcs.get(fnname) else {
                         let args: Result<Vec<_>, _> = args.iter().map(|x| x.eval(cf)).collect();
                         let args = args?;
                         let rv = self.extcalls.handle(&mut self.memory, *fnname, args)?;
@@ -318,6 +428,7 @@ impl MachineState {
                         return Ok(None);
                     };
                     let mut ncf = CallFrame::new(*fnname, HashMap::new());
+                    let mut newargs = Vec::new();
                     for (idx, arg) in args.iter().enumerate() {
                         let idx: u32 = idx.try_into().map_err(|_| {
                             MachineError::new(
@@ -326,7 +437,21 @@ impl MachineState {
                             )
                         })?;
                         let arg = arg.eval(cf)?;
+                        newargs.push(arg);
                         ncf.locals.insert(idx, arg);
+                    }
+                    if let Some(spec) = &new_func.spec {
+                        ncf.execute_enter_spec(
+                            &mut cf.spec_stuff.1,
+                            &self.specs_stuff,
+                            spec,
+                            newargs,
+                            &self.memory,
+                        )
+                        .unwrap();
+                    } else {
+                        let oi = mem::replace(&mut cf.spec_stuff.1, OwnershipInfo::new());
+                        ncf.spec_stuff = (ExecLocalCtx::new(), oi);
                     }
                     self.frame.push(ncf);
                     return Ok(None);
@@ -352,17 +477,22 @@ impl MachineState {
         }
     }
 
-    pub fn start(code: Program, func: IStr, args: Vec<Value>) -> Self {
+    pub fn start(mut code: Program, func: IStr, args: Vec<Value>) -> Self {
         let locals = args
             .into_iter()
             .enumerate()
             .map(|(x, y)| (x.try_into().unwrap(), y))
             .collect();
+        let mut execctx = ExecCtx::new();
+        execctx
+            .consume_globals(&mut None, mem::take(&mut code.spec_stuff.1))
+            .unwrap();
         Self {
             frame: vec![CallFrame::new(func, locals)],
             memory: Memory::new(),
             code,
             extcalls: ExtcallHandler::new(),
+            specs_stuff: execctx,
         }
     }
 }
