@@ -197,7 +197,7 @@ impl<'a> ExecLocalCtx<'a> {
     ) -> SpecMonad<()> {
         for def in defs {
             let v = self.exec(globals, monad, &def.value)?;
-            println!(" let {}: {} = {}", def.name, def.ty, v);
+            // println!(" let {}: {} = {}", def.name, def.ty, v);
             self.push_arg(def.name, v);
         }
         Ok(())

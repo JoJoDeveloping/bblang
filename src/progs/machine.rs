@@ -257,10 +257,10 @@ impl CallFrame {
         self.spec_stuff
             .0
             .execute_const_defs_as_lets(global, &mut Some(combined), &prog.pre)?;
-        println!(
-            "Having just called {}, having ownership {:?}",
-            self.function, self.spec_stuff.1
-        );
+        // println!(
+        //     "Having just called {}, having ownership {:?}",
+        //     self.function, self.spec_stuff.1
+        // );
         Ok(())
     }
 
@@ -272,10 +272,10 @@ impl CallFrame {
         global_mem: &Memory,
         result: Value,
     ) -> SpecMonad<()> {
-        println!(
-            "Before returning from {}, having ownership {:?}",
-            self.function, self.spec_stuff.1
-        );
+        // println!(
+        //     "Before returning from {}, having ownership {:?}",
+        //     self.function, self.spec_stuff.1
+        // );
         let combined = MonadOwnershipArg {
             extract_from: &mut self.spec_stuff.1,
             extract_into: parent_ownership,
