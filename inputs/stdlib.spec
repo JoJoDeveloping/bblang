@@ -57,3 +57,21 @@ def eqptr : ptr -> ptr -> Bool = fun a => fun b => match ptrdiff a b with
 
 def eqoption : forall A, (A -> A -> Bool) -> Option<A> -> Option<A> -> Bool = fun eqa => fun a => fun b => match a : Option with None => match b : Option with None => Bool::True | Some(x) => Bool::False end
 | Some(ax) => match b : Option with None => Bool::False | Some(bx) => eqa ax bx end end
+
+
+def len : forall A, List<A> -> int = rec len lst => match lst : List with Nil => 0 | Cons(x, xr) => add 1 (len xr) end
+
+
+
+def eqlist : forall A, (A -> A -> Bool) -> List<A> -> List<A> -> Bool =
+    fun eqa => rec eqlist a => fun b => match a : List with
+        Nil => match b : List with
+            Nil => Bool::True
+            | Cons (bh, br) => Bool::False end
+        | Cons (ah, ar) => match b : List with
+            Nil => Bool::False
+            | Cons (bh, br) => and (eqa ah bh) (eqlist ar br) end
+    end
+
+
+def app : forall A, List<A> -> List<A> -> List<A> = rec app l1 => fun l2 => match l1 : List with Nil => l2 | Cons(x, xr) => List::Cons(x, app xr l2) end

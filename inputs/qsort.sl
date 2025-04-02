@@ -1,43 +1,26 @@
 spec
-    def List: Val -> List<int> = rec List v => match v : Val with
-        Int(i) => fail Bool::True
-      | Ptr(p) => match p with
-            None => List::Nil
-          | Some(p) => 
+    def List: Val -> List<int> = rec List v => match asoptr v with
+        None => List::Nil
+        | Some(p) => 
             let head = asint (Owned p) in
             let tail = List (Owned (ptradd p 1)) in
                 List::Cons(head, tail)
             end end
-          end
     end
-
-    def eqlist : forall A, (A -> A -> Bool) -> List<A> -> List<A> -> Bool =
-        fun eqa => rec eqlist a => fun b => match a : List with
-            Nil => match b : List with
-                Nil => Bool::True
-              | Cons (bh, br) => Bool::False end
-          | Cons (ah, ar) => match b : List with
-                Nil => Bool::False
-              | Cons (bh, br) => and (eqa ah bh) (eqlist ar br) end
-        end
 
     def eqintlist : List<int> -> List<int> -> Bool = eqlist eqint
 
-    def app : forall A, List<A> -> List<A> -> List<A> = rec app l1 => fun l2 => match l1 : List with Nil => l2 | Cons(x, xr) => List::Cons(x, app xr l2) end
-
-
-    def nil : forall A, List<A> = List::Nil
-    def cons : forall A, A -> List<A> -> List<A> = fun x => fun xs => List::Cons(x, xs)
     def splitpivot : int -> List<int> -> Pair<List<int>, List<int>> = fun pivot => rec split lst => match lst : List with
         Nil => Pair::Pair(List::Nil, List::Nil)
     | Cons(x, xs) => match split xs : Pair with Pair(lstle, lstgt) => match le x pivot with
-            True => Pair::Pair(cons x lstle, lstgt)
-        | False => Pair::Pair(lstle, cons x lstgt) end end end
-    def split : List<int> -> Pair<List<int>, List<int>> = fun lst => match lst : List with Nil => Pair::Pair(List::Nil, List::Nil) 
-        | Cons(pivot, lst) => match splitpivot pivot lst with Pair(lstle, lstgt) => Pair::Pair(cons pivot lstle, lstgt) end end
+            True => Pair::Pair(List::Cons(x, lstle), lstgt)
+        | False => Pair::Pair(lstle, List::Cons(x, lstgt)) end end end
 
-    def qsort : List<int> -> List<int> = rec qsort lst => match lst : List with Nil => nil | Cons(pivot, lst) => match lst with Nil => cons pivot lst
-        | Cons(x, y) => match splitpivot pivot lst with Pair(lst1, lst2) => app (qsort lst1) (cons pivot (qsort lst2)) end end end
+    def split : List<int> -> Pair<List<int>, List<int>> = fun lst => match lst : List with Nil => Pair::Pair(List::Nil, List::Nil) 
+        | Cons(pivot, lst) => match splitpivot pivot lst with Pair(lstle, lstgt) => Pair::Pair(List::Cons(pivot, lstle), lstgt) end end
+
+    def qsort_spec : List<int> -> List<int> = rec qsort lst => match lst : List with Nil => List::Nil | Cons(pivot, lst) => match lst with Nil => List::Cons(pivot, lst)
+        | Cons(x, y) => match splitpivot pivot lst with Pair(lst1, lst2) => app (qsort lst1) (List::Cons(pivot, qsort lst2)) end end end
 end
 
 
@@ -110,7 +93,7 @@ end locals tmp =
 
 fun qsort(lst) spec 
   pre: def lsti : List<int> = List lst;
-  post: def foo : int = assert (eqintlist (qsort lsti) (List result))
+  post: def foo : int = assert (eqintlist (qsort_spec lsti) (List result))
 end locals pivot, left, right, rest, tmp =
     if empty(lst) then lst else
     set pivot = head(lst); set rest = tail(lst);
@@ -144,8 +127,11 @@ end locals tmp =
 
 fun helloworldlist() spec pre: ; post:
     def foo: List<int> = List result
-end= cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, nil())))))))))))))
+    // we could say it has to be precisely that one list but meh
+    def len_ok: int = assert (eqint (len foo) 13)
+end = cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, nil())))))))))))))
 
 fun main() spec pre: ; post: end =
     printall(helloworldlist());
-    printall(qsort(helloworldlist()))
+    printall(qsort(helloworldlist()));
+    42
