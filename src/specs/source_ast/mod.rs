@@ -61,6 +61,7 @@ pub enum SourceExpr {
     ),
     IndMatch(SourceExprBox, Option<IStr>, HashMap<IStr, SourceMatchArm>),
     NumLiteral(BigInt),
+    PredicateBox(IStr, Vec<IStr>, SourceExprBox),
 }
 
 pub struct SourceMatchArm {

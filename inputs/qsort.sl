@@ -1,11 +1,14 @@
 spec
-    def List: Val -> List<int> = rec List v => match asoptr v with
-        None => List::Nil
-        | Some(p) => 
-            let head = asint (Owned p) in
-            let tail = List (Owned (ptradd p 1)) in
-                List::Cons(head, tail)
-            end end
+    def List: Val -> List<int> = rec List v => 
+        pred List(v) =>
+          match asoptr v with
+            None => List::Nil
+            | Some(p) => 
+                let blk = Block p 2 in
+                let head = asint (Owned p) in
+                let tail = List (Owned (ptradd p 1)) in
+                    List::Cons(head, tail)
+                end
     end
 
     def eqintlist : List<int> -> List<int> -> Bool = eqlist eqint
@@ -65,13 +68,14 @@ end = *lst
 fun tail(lst) spec 
   pre: def listi : List<int> = List lst
        def listin : Pair<int, List<int>> = match listi with 
-        Nil => fail Bool::True
+        Nil => fail Unit::Unit
        | Cons(hd, tl) => Pair::Pair(hd, tl) end
        def hdin : int = fst listin
        def tlin : List<int> = snd listin;
   post:
     def listres : List<int> = List result
     def istail : int = assert (eqintlist listres tlin)
+    def blk : Unit = Block (asptr lst) 2
     def ishead : int = assert (eqint (asint (Owned (asptr lst))) hdin)
     def istail2 : int = assert (eqoption eqptr (asoptr (Owned (ptradd (asptr lst) 1))) (asoptr result))
 end = *tailptr(lst)
@@ -131,7 +135,13 @@ fun helloworldlist() spec pre: ; post:
     def len_ok: int = assert (eqint (len foo) 13)
 end = cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, nil())))))))))))))
 
+fun verylonglist() spec pre: ; post:
+    def foo: List<int> = List result
+    // we could say it has to be precisely that one list but meh
+    def len_ok: int = assert (eqint (len foo) 39)
+end = cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87, cons(111, cons(114, cons(108, cons(100, cons(33, nil())))))))))))))))))))))))))))))))))))))))
+
 fun main() spec pre: ; post: end =
-    printall(helloworldlist());
-    printall(qsort(helloworldlist()));
+    printall(verylonglist());
+    printall(qsort(verylonglist()));
     42

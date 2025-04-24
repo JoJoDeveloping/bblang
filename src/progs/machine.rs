@@ -7,17 +7,17 @@ use std::{
 };
 
 use crate::{
+    ownership::OwnershipPredicate,
     specs::exec::{
         self, ExecCtx, ExecLocalCtx, InfPointer,
         monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
+        pointer_origin::PointerOrigin,
     },
     utils::{
         SwitchToDisplay,
         string_interner::{IStr, intern},
     },
 };
-
-use crate::ownership::OwnershipInfo;
 
 use super::{
     ast::{
@@ -34,7 +34,8 @@ pub struct CallFrame {
     bb: usize,
     offset: usize,
     locals: HashMap<u32, Value>,
-    spec_stuff: (ExecLocalCtx<'static>, OwnershipInfo),
+    // we abuse the types a bit and pretend we're a predicate
+    spec_stuff: (ExecLocalCtx<'static>, OwnershipPredicate),
 }
 
 pub struct MachineState {
@@ -61,7 +62,7 @@ impl CallFrame {
             bb: 0,
             offset: 0,
             locals,
-            spec_stuff: (ExecLocalCtx::new(), OwnershipInfo::new()),
+            spec_stuff: (ExecLocalCtx::new(), OwnershipPredicate::new()),
         }
     }
 }
@@ -203,7 +204,7 @@ impl Value {
     }
 }
 
-pub fn value_to_value(value: Value) -> Rc<exec::Value> {
+pub fn value_to_value(value: Value, provenance: impl Fn() -> PointerOrigin) -> Rc<exec::Value> {
     Rc::new(match value {
         Value::Int(i) => exec::Value::InductiveVal {
             ty: intern("Val"),
@@ -216,7 +217,10 @@ pub fn value_to_value(value: Value) -> Rc<exec::Value> {
             args: vec![Rc::new(exec::Value::InductiveVal {
                 ty: intern("Option"),
                 constr: intern("Some"),
-                args: vec![Rc::new(exec::Value::PtrValue(InfPointer(blk, off.into())))],
+                args: vec![Rc::new(exec::Value::PtrValue(
+                    InfPointer(blk, off.into()),
+                    provenance(),
+                ))],
             })],
         },
         Value::NullPointer => exec::Value::InductiveVal {
@@ -238,7 +242,7 @@ impl CallFrame {
 
     fn execute_enter_spec(
         &mut self,
-        old_ownership: &mut OwnershipInfo,
+        old_ownership: &mut OwnershipPredicate,
         global: &ExecCtx,
         prog: &CompiledFunctionSpec,
         args: Vec<Value>,
@@ -252,7 +256,9 @@ impl CallFrame {
         };
         assert_eq!(args.len(), prog.arg_names.len());
         for (name, arg) in prog.arg_names.iter().copied().zip(args.into_iter()) {
-            self.spec_stuff.0.push_arg(name, value_to_value(arg));
+            self.spec_stuff
+                .0
+                .push_arg(name, value_to_value(arg, || PointerOrigin::Immediate));
         }
         self.spec_stuff
             .0
@@ -266,7 +272,7 @@ impl CallFrame {
 
     fn execute_leave_spec(
         &mut self,
-        parent_ownership: &mut OwnershipInfo,
+        parent_ownership: &mut OwnershipPredicate,
         global: &ExecCtx,
         prog: &CompiledFunctionSpec,
         global_mem: &Memory,
@@ -282,9 +288,10 @@ impl CallFrame {
             mode: MonadFailMode::Assert,
             memory: global_mem,
         };
-        self.spec_stuff
-            .0
-            .push_arg(intern("result"), value_to_value(result));
+        self.spec_stuff.0.push_arg(
+            intern("result"),
+            value_to_value(result, || PointerOrigin::Immediate),
+        );
         self.spec_stuff
             .0
             .execute_const_defs_as_lets(global, &mut Some(combined), &prog.post)?;
@@ -309,14 +316,22 @@ impl Statement {
             }
             Statement::Load(res, operand) => {
                 let ptr = operand.eval(cf)?.as_pointer()?;
-                if !cf.spec_stuff.1.ensure(&InfPointer(ptr.0, ptr.1.into())) {
+                if !cf
+                    .spec_stuff
+                    .1
+                    .access_memory(&InfPointer(ptr.0, ptr.1.into()), false, true)
+                {
                     panic!("Read memory at {ptr:?} without owning it!")
                 }
                 cf.set_local(*res, mem.load(ptr)?)
             }
             Statement::Store(addr, data) => {
                 let ptr = addr.eval(cf)?.as_pointer()?;
-                if !cf.spec_stuff.1.ensure(&InfPointer(ptr.0, ptr.1.into())) {
+                if !cf
+                    .spec_stuff
+                    .1
+                    .access_memory(&InfPointer(ptr.0, ptr.1.into()), true, true)
+                {
                     panic!("Wrote memory at {ptr:?} without owning it!")
                 }
                 mem.store(ptr, data.eval(cf)?)?
@@ -339,6 +354,7 @@ impl Statement {
                 for i in 0..len {
                     cf.spec_stuff.1.insert(&InfPointer(blk, i.into()));
                 }
+                cf.spec_stuff.1.insert_block(blk);
                 cf.set_local(*res, Value::Loc(Pointer(blk, 0)));
             }
             Statement::Free(operand) => {
@@ -348,6 +364,9 @@ impl Statement {
                         MachineErrorKind::MemoryUnsafety,
                         format!("free called with {ptr:?}, which is offset"),
                     ));
+                }
+                if !cf.spec_stuff.1.remove_block(ptr.0) {
+                    panic!("Freed memory at {ptr:?} without owning deallocation token!")
                 }
                 let waslen = mem.dealloc(ptr.0)?;
 
@@ -484,7 +503,7 @@ impl MachineState {
                             panic!("Precondition of {} violated: {:?}", ncf.function, e);
                         }
                     } else {
-                        let oi = mem::replace(&mut cf.spec_stuff.1, OwnershipInfo::new());
+                        let oi = mem::replace(&mut cf.spec_stuff.1, OwnershipPredicate::new());
                         ncf.spec_stuff = (ExecLocalCtx::new(), oi);
                     }
                     self.frame.push(ncf);

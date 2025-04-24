@@ -55,6 +55,16 @@ pub fn populate_tc_globals(g: &mut GlobalCtx) {
         ))),
     );
     g.global_defs.insert(
+        intern("Block"),
+        PolyType::without_binders(Rc::new(Type::Arrow(
+            ptr.clone(),
+            Rc::new(Type::Arrow(
+                int.clone(),
+                Rc::new(Type::Inductive(intern("Unit"), vec![])),
+            )),
+        ))),
+    );
+    g.global_defs.insert(
         intern("Fail"),
         PolyType::without_binders(Rc::new(Type::Arrow(
             Rc::new(Type::Inductive(intern("Bool"), vec![])),
@@ -115,6 +125,7 @@ pub fn populate_exec_builtins(ctx: &mut ExecCtx) {
     ctx.insert_n_arg_builtin(intern("neg"), 1);
     ctx.insert_n_arg_builtin(intern("bitand"), 2);
     ctx.insert_n_arg_builtin(intern("Owned"), 1);
+    ctx.insert_n_arg_builtin(intern("Block"), 2);
     ctx.insert_n_arg_builtin(intern("Fail"), 1);
     ctx.insert_n_arg_builtin(intern("ptradd"), 2);
     ctx.insert_n_arg_builtin(intern("ptrdiff"), 2);
@@ -134,6 +145,7 @@ pub fn run_builtin<'b>(
 
         [a1] if name == intern("Fail") => return specs::fail(a1),
         [a1] if name == intern("Owned") => return specs::owned(a1, monad),
+        [a1, a2] if name == intern("Block") => return specs::block(a1, a2, monad),
 
         [a1, a2] if name == intern("ptradd") => ptr::ptradd(a1, a2),
         [a1, a2] if name == intern("ptrdiff") => ptr::ptrdiff(a1, a2),

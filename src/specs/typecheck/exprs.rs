@@ -315,6 +315,23 @@ impl<'a> LocalCtx<'a> {
                 )
             }
             SourceExpr::NumLiteral(x) => (Rc::new(Type::Builtin(Builtin::Int)), Expr::NumConst(x)),
+            SourceExpr::PredicateBox(name, bound, body) => {
+                let mut filter = HashSet::new();
+                for &idx in &bound {
+                    if self.lookup_ident(idx).is_none() {
+                        return Err((TypeError::UndefinedVar(idx), inexpr.1));
+                    }
+                    if !filter.insert(idx) {
+                        return Err((TypeError::DuplicatePredicateArg(idx), inexpr.1));
+                    }
+                }
+                let new_self = self.push_filter(filter);
+                if !globals.predicates.insert(name) {
+                    return Err((TypeError::DuplicatePredicateName(name), inexpr.1));
+                }
+                let (ty, body) = new_self.check_expr(globals, body)?;
+                (ty, Expr::PredicateBox(name, bound, Box::new(body)))
+            }
         })
     }
 
@@ -375,6 +392,7 @@ impl GlobalCtx {
                     .iter_mut()
                     .for_each(|e| self.resolve_expr_fully(e, allowed_free_vars));
             }
+            Expr::PredicateBox(_, _, b) => self.resolve_expr_fully(b, allowed_free_vars),
         }
     }
 

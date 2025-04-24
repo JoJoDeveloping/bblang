@@ -531,6 +531,7 @@ impl Parser {
             | Token::LET
             | Token::FUN
             | Token::REC
+            | Token::PREDICATE
             | Token::LPAR
             | Token::IDENT(_)
             | Token::NUM(_),
@@ -594,19 +595,17 @@ impl Parser {
                     SourceExpr::IndMatch(discriminee, ty, arms)
                 }
                 Some(Token::LET) => {
-                    let binder = self.expect_ident();
-                    let polyty = if let Some(Token::COLON) = self.peek_token() {
-                        self.next_token();
-                        Some(Box::new(self.parse_polyty()))
-                    } else {
-                        None
-                    };
-                    self.expect(Token::EQ);
-                    let expr1 = self.parse_spec_expr();
-                    self.expect(Token::IN);
-                    let expr2 = self.parse_spec_expr();
+                    let res = self.parse_let();
                     self.expect(Token::END);
-                    SourceExpr::Let(binder, polyty, expr1, expr2)
+                    res
+                }
+                Some(Token::PREDICATE) => {
+                    let name = self.expect_ident();
+                    self.expect(Token::LPAR);
+                    let binds = self.parse_comma_separated_idents(Token::RPAR);
+                    self.expect(Token::EQGT);
+                    let expr = self.parse_spec_expr();
+                    SourceExpr::PredicateBox(name, binds, expr)
                 }
                 Some(Token::FUN) => self.parse_lambda(None),
                 Some(Token::REC) => {
@@ -671,5 +670,26 @@ impl Parser {
         self.expect(Token::EQGT);
         let body = self.parse_spec_expr();
         SourceExpr::Lambda(rbinder, abinder, ty, body)
+    }
+
+    fn parse_let(&mut self) -> SourceExpr {
+        let binder = self.expect_ident();
+        let polyty = if let Some(Token::COLON) = self.peek_token() {
+            self.next_token();
+            Some(Box::new(self.parse_polyty()))
+        } else {
+            None
+        };
+        self.expect(Token::EQ);
+        let expr1 = self.parse_spec_expr();
+        self.expect(Token::IN);
+        let expr2 = if let Some(Token::LET) = self.peek_token() {
+            let begin = self.pos();
+            self.next_token();
+            Box::new((self.parse_let(), (begin, self.endpos())))
+        } else {
+            self.parse_spec_expr()
+        };
+        SourceExpr::Let(binder, polyty, expr1, expr2)
     }
 }

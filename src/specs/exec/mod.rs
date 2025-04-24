@@ -1,13 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
+    fmt::{Display, Write},
+    mem,
+    ops::Deref,
     rc::Rc,
 };
 
-use monad::{MonadArg, SpecMonad};
+use monad::{MonadArg, MonadOwnershipArg, SpecMonad};
 use num_bigint::BigInt;
+use pointer_origin::{PointerOrigin, PointerOrigins};
 
-use crate::utils::string_interner::IStr;
+use crate::{
+    ownership::{OwnershipPredicate, PredicateName, predicate_arg::PredArg},
+    utils::{disjount_extend::DisjointExtend, string_interner::IStr},
+};
 
 use super::{
     builtin::{populate_exec_builtins, run_builtin},
@@ -15,6 +21,7 @@ use super::{
 };
 
 pub mod monad;
+pub mod pointer_origin;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct InfPointer(pub u32, pub BigInt);
@@ -33,7 +40,7 @@ pub enum Value {
         captures: HashMap<IStr, Rc<Value>>,
     },
     NumValue(BigInt),
-    PtrValue(InfPointer),
+    PtrValue(InfPointer, PointerOrigin),
 }
 #[derive(Debug)]
 pub struct ExecCtx {
@@ -102,17 +109,21 @@ impl<'a> ExecLocalCtx<'a> {
         }
     }
 
-    pub fn exec<'b>(
+    fn lookup_var(&self, globals: &ExecCtx, istr: IStr) -> Rc<Value> {
+        match self.lookup(istr) {
+            Some(k) => k,
+            None => globals.globals.get(&istr).unwrap().clone(),
+        }
+    }
+
+    pub fn exec<'x, 'b: 'x>(
         &self,
         globals: &ExecCtx,
-        monad: &mut MonadArg<'b>,
+        monad: &'x mut MonadArg<'b>,
         expr: &Expr,
     ) -> SpecMonad<Rc<Value>> {
         Ok(match expr {
-            Expr::Var(istr) => match self.lookup(*istr) {
-                Some(k) => k,
-                None => globals.globals.get(istr).unwrap().clone(),
-            },
+            Expr::Var(istr) => self.lookup_var(globals, *istr),
             Expr::Lambda(rec, arg, body) => Rc::new(Value::Lambda {
                 rec: *rec,
                 arg: *arg,
@@ -174,6 +185,51 @@ impl<'a> ExecLocalCtx<'a> {
                     .map(|x: &Box<Expr>| self.exec(globals, monad, x))
                     .collect::<SpecMonad<Vec<_>>>()?;
                 return run_builtin(*name, args, monad);
+            }
+            Expr::PredicateBox(name, args, body) => {
+                let mut str: String = String::new();
+                let mut origins = PointerOrigins::new();
+                let mut pred_args = Vec::new();
+                for &arg_name in args {
+                    let arg = self.lookup_var(globals, arg_name);
+                    write!(str, "{arg}, ").unwrap();
+                    let arg = PredArg::from_value_inner(arg.deref(), &mut origins).unwrap();
+                    pred_args.push(arg);
+                }
+                // println!("Starting to build predicate {name}({str}) with origins {origins:?}!");
+
+                // let origins_str = format!("{origins:?}");
+
+                let res = if let Some(monad) = monad {
+                    let name = PredicateName::new(*name, pred_args);
+                    // println!(
+                    //     "  Debug output of the extract_from:\n{}",
+                    //     monad.extract_from
+                    // );
+                    let mut pred = if let Some(x) = monad.extract_from.lookup_predicate(&name) {
+                        // println!("Predicate could be extracted!");
+                        x
+                    } else {
+                        // println!("Predicate could not be extracted, building {name} for real!");
+                        let mut newpred = OwnershipPredicate::new();
+                        let newmonad = monad.with_new_into(&mut newpred);
+                        let res = self.exec(globals, &mut Some(newmonad), body)?;
+                        // println!("Finished building {name} (the hard part), output: {res}!");
+                        newpred.set_output(res);
+                        newpred
+                    };
+                    let res = pred.output();
+
+                    pred.merge_upwards_for_args(origins.non_immediate_origins());
+
+                    monad.extract_into.save_predicate(name, pred, origins);
+                    res
+                } else {
+                    // println!("Aborting build, since we're running without ownership info..?");
+                    self.exec(globals, monad, body)?
+                };
+                // println!("Predicate {name}({str}) = {res}    origins: {origins_str}");
+                res
             }
         })
     }
@@ -254,6 +310,7 @@ impl Expr {
                 res
             }
             Expr::NumConst(_) => HashSet::new(),
+            Expr::PredicateBox(_, _, body) => body.free_vars(),
         }
     }
 }
@@ -280,14 +337,9 @@ impl Display for Value {
                 }
                 write!(f, ")")
             }
-            Value::Lambda {
-                rec: _,
-                arg: _,
-                body: _,
-                captures: _,
-            } => write!(f, "fn"),
+            Value::Lambda { .. } => write!(f, "fn"),
             Value::NumValue(x) => Display::fmt(x, f),
-            Value::PtrValue(x) => Display::fmt(x, f),
+            Value::PtrValue(x, _) => Display::fmt(x, f),
         }
     }
 }

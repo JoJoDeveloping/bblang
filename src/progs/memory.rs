@@ -27,6 +27,10 @@ impl Allocation {
             data: vec![Value::Int(0); len as usize],
         }
     }
+
+    pub fn length(&self) -> usize {
+        self.data.len()
+    }
 }
 
 impl Display for Allocation {
@@ -135,5 +139,9 @@ impl Memory {
                 format!("out-of-bounds for {:?} (allocation size is {size}", off),
             ))
         }
+    }
+
+    pub fn get_block(&self, ptr: u32) -> Option<&Allocation> {
+        self.allocs.get(&ptr)
     }
 }

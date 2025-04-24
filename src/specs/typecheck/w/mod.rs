@@ -183,6 +183,7 @@ pub struct GlobalCtx {
     pub global_defs: HashMap<IStr, PolyType>,
     pub name_generator: TypeVarGen,
     pub subst: GlobalSubst,
+    pub predicates: HashSet<IStr>,
 }
 
 impl GlobalCtx {
@@ -192,6 +193,7 @@ impl GlobalCtx {
             global_defs: HashMap::new(),
             name_generator: TypeVarGen::new(),
             subst: GlobalSubst::new(),
+            predicates: HashSet::new(),
         };
         populate_tc_globals(&mut this);
         this
@@ -203,10 +205,16 @@ pub struct LocalCtx<'a> {
     parent: Option<&'a LocalCtx<'a>>,
     term_vars: HashMap<IStr, PolyType>,
     type_vars: HashMap<IStr, TypeVar>,
+    filter: Option<HashSet<IStr>>,
 }
 
 impl<'a> LocalCtx<'a> {
     pub fn lookup_type(&'a self, name: IStr) -> Option<TypeVar> {
+        if let Some(x) = &self.filter {
+            if !x.contains(&name) {
+                return None;
+            }
+        }
         self.type_vars
             .get(&name)
             .copied()
@@ -225,6 +233,7 @@ impl<'a> LocalCtx<'a> {
             parent: None,
             term_vars: HashMap::new(),
             type_vars: HashMap::new(),
+            filter: None,
         }
     }
 
@@ -237,6 +246,7 @@ impl<'a> LocalCtx<'a> {
             parent: Some(self),
             term_vars,
             type_vars,
+            filter: None,
         }
     }
 
@@ -246,6 +256,15 @@ impl<'a> LocalCtx<'a> {
 
     pub fn push_type_vars(&'a self, vars: HashMap<IStr, TypeVar>) -> Self {
         self.push(HashMap::new(), vars)
+    }
+
+    pub fn push_filter(&'a self, filter: HashSet<IStr>) -> Self {
+        Self {
+            parent: Some(self),
+            term_vars: HashMap::new(),
+            type_vars: HashMap::new(),
+            filter: Some(filter),
+        }
     }
 
     pub fn check_const_defs_as_let_chain(

@@ -4,9 +4,9 @@ end
 
 fun fib(n) spec
   pre : 
-    def foo : int = match le 0 (asint n) with True => 0 | False => fail Bool::True end;
+    def foo : int = match le 0 (asint n) with True => 0 | False => fail Unit::Unit end;
   post :
-    def bar : int = match eqint (asint result) (fib (asint n)) with True => 0 | False => fail Bool::True end
+    def bar : int = match eqint (asint result) (fib (asint n)) with True => 0 | False => fail Unit::Unit end
 end locals i, j, t =
     set i = 0;
     set j = 1;

@@ -4,7 +4,7 @@ end
 
 fun mkcell(n) spec 
   pre: ;
-  post: def foo : int = match eqint (asint n) (asint (Owned (asptr result))) with True => 0 | False => fail Bool::True end
+  post: def foo : int = match eqint (asint n) (asint (Owned (asptr result))) with True => 0 | False => fail Unit::Unit end
 end locals lc =
     set lc = alloc 1;
     lc <- n;
@@ -13,13 +13,13 @@ end locals lc =
 
 fun inccell(pa) spec 
   pre: def inccell_initial: int = asint (Owned (asptr pa));
-  post: def foo : int = match eqint (add inccell_initial 1) (asint (Owned (asptr pa))) with True => 0 | False => fail Bool::True end
+  post: def foo : int = match eqint (add inccell_initial 1) (asint (Owned (asptr pa))) with True => 0 | False => fail Unit::Unit end
 end =
     pa <- *pa + 1; 0
 
 fun popcell(pa) spec
   pre: def val: int = asint (Owned (asptr pa));
-  post: def foo : int = match eqint (asint result) val with True => 0 | False => fail Bool::True end
+  post: def foo : int = match eqint (asint result) val with True => 0 | False => fail Unit::Unit end
 end locals lc =
   set lc = *pa;
   free pa;

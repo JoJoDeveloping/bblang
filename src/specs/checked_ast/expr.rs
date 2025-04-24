@@ -16,6 +16,7 @@ pub enum Expr {
     IndMatch(Box<Expr>, IStr, HashMap<IStr, MatchArm>),
     NumConst(BigInt),
     Builtin(IStr, Vec<Box<Expr>>),
+    PredicateBox(IStr, Vec<IStr>, Box<Expr>),
 }
 
 #[derive(Clone, Debug)]

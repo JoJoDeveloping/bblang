@@ -75,6 +75,7 @@ pub enum Token {
     PTR,
     FORALL,
     SPEC,
+    PREDICATE,
     IDENT(IStr),
     NUM(i32),
 }
@@ -116,6 +117,7 @@ impl Lexer {
         idmap.insert(intern("ptr"), Token::PTR);
         idmap.insert(intern("forall"), Token::FORALL);
         idmap.insert(intern("spec"), Token::SPEC);
+        idmap.insert(intern("pred"), Token::PREDICATE);
         Self {
             filename,
             data,
@@ -280,7 +282,7 @@ mod test {
 
     #[test]
     fn test_all_tokens() {
-        let data = "(),+-*!~^&|;= == < > <= <- -> => :: : _ fun locals nullptr if then else do done while return set alloc free match with end inductive def rec let in int ptr forall spec 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
+        let data = "(),+-*!~^&|;= == < > <= <- -> => :: : _ fun locals nullptr if then else do done while return set alloc free match with end inductive def rec let in int ptr forall spec pred 0 1 2 42 999 foo bar baz FOO_BAR_42_baz\t\n";
         let res = Lexer::new(intern("foo"), data.chars().collect()).tokenize();
         assert_eq!(
             res,
@@ -333,6 +335,7 @@ mod test {
                 Token::PTR,
                 Token::FORALL,
                 Token::SPEC,
+                Token::PREDICATE,
                 Token::NUM(0),
                 Token::NUM(1),
                 Token::NUM(2),

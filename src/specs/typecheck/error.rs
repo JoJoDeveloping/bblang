@@ -20,6 +20,8 @@ pub enum TypeError {
     OccursFailure(TypeVar, Rc<Type>),
     UnificationFailure(Rc<Type>, Rc<Type>),
     UndefinedVar(IStr),
+    DuplicatePredicateArg(IStr),
+    DuplicatePredicateName(IStr),
     IllegalGenericsDefinition(Generics, Rc<Type>),
     UndefinedConstr(IStr),
     IllegalGenericsInstantiation(Generics, usize),

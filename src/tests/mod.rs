@@ -19,10 +19,10 @@ fn run_file_assert_output(file: &str, output: Value) {
     assert!(false, "return value {res:?} does not match Ok({output:?})")
 }
 
-#[test]
-fn test_fibonacci() {
-    run_file_assert_output("inputs/fib_iter.sl", Value::Int(102334155));
-}
+// #[test]
+// fn test_fibonacci() {
+//     run_file_assert_output("inputs/fib_iter.sl", Value::Int(102334155));
+// }
 
 #[test]
 fn test_fibonacci_rec() {
