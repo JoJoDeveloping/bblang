@@ -13,7 +13,7 @@ pub struct Interner<T: InternableBase> {
 }
 
 #[derive(Clone, Copy)]
-struct RawHashKeyValue(u64, pub usize);
+pub struct RawHashKeyValue(u64, pub usize);
 
 impl RawHashKeyValue {
     pub fn new_in<S: BuildHasher, H: Hash>(bh: &S, x: &H, data: usize) -> Self {

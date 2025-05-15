@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{specs::typecheck::w::utils::TypeVar, utils::string_interner::IStr};
 
@@ -50,7 +47,7 @@ pub enum Type {
 }
 
 #[derive(Clone, Debug)]
-pub struct PolyType {
+pub struct PolyType<TY = Rc<Type>> {
     pub binders: Generics,
-    pub ty: Rc<Type>,
+    pub ty: TY,
 }

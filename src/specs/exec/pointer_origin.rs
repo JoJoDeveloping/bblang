@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt::Debug};
 
-use super::InfPointer;
+use crate::specs::InfPointer;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum PointerOrigin {

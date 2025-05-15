@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    specs::exec::Value,
+    specs::{checked_ast::expr::ExprBox, values::Value},
     utils::string_interner::{IStr, intern},
 };
 
@@ -12,7 +12,7 @@ mod specs;
 use super::{
     checked_ast::{
         expr::Expr,
-        types::{Builtin, PolyType, Type},
+        types::{Builtin, Generics, PolyType, Type},
     },
     exec::{
         ExecCtx,
@@ -88,27 +88,38 @@ pub fn populate_tc_globals(g: &mut GlobalCtx) {
             )),
         ))),
     );
+    let name = g.name_generator.next();
+    g.global_defs.insert(
+        intern("eq"),
+        PolyType {
+            binders: Generics {
+                names: vec![(name, Some(intern("A")))],
+            },
+            ty: Rc::new(Type::Arrow(
+                Rc::new(Type::TypeVar(name)),
+                Rc::new(Type::Arrow(
+                    Rc::new(Type::TypeVar(name)),
+                    Rc::new(Type::Inductive(intern("Bool"), vec![])),
+                )),
+            )),
+        },
+    );
 }
 
-fn n_arg_builtin(n: usize, b: IStr) -> Rc<Value> {
+fn n_arg_builtin(n: usize, b: IStr) -> Value {
     assert!(n > 0);
     let binders = (1..=n)
-        .map(|x| Box::new(Expr::Var(intern(format!("x{x}")))))
+        .map(|x| ExprBox::new(Expr::Var(intern(format!("x{x}")))))
         .collect();
-    let mut base = Box::new(Expr::Builtin(b, binders));
+    let mut base = ExprBox::new(Expr::Builtin(b, binders));
     for x in (2..=n).rev() {
-        base = Box::new(Expr::Lambda(None, intern(format!("x{x}")), base));
+        base = ExprBox::new(Expr::Lambda(None, intern(format!("x{x}")), base));
     }
-    Rc::new(Value::Lambda {
-        rec: None,
-        arg: intern("x1"),
-        body: base,
-        captures: HashMap::new(),
-    })
+    Value::closure(None, intern("x1"), base, HashMap::new())
 }
 
 impl ExecCtx {
-    fn insert_global(&mut self, name: IStr, global: Rc<Value>) {
+    fn insert_global(&mut self, name: IStr, global: Value) {
         self.globals.insert(name, global);
         self.globals_order.push(name);
     }
@@ -129,14 +140,11 @@ pub fn populate_exec_builtins(ctx: &mut ExecCtx) {
     ctx.insert_n_arg_builtin(intern("Fail"), 1);
     ctx.insert_n_arg_builtin(intern("ptradd"), 2);
     ctx.insert_n_arg_builtin(intern("ptrdiff"), 2);
+    ctx.insert_n_arg_builtin(intern("eq"), 2);
 }
 
-pub fn run_builtin<'b>(
-    name: IStr,
-    args: Vec<Rc<Value>>,
-    monad: &mut MonadArg<'b>,
-) -> SpecMonad<Rc<Value>> {
-    Ok(match &args as &[_] {
+pub fn run_builtin<'b>(name: IStr, args: Vec<Value>, monad: &mut MonadArg<'b>) -> SpecMonad<Value> {
+    Ok(match &args as &[Value] {
         [a1, a2] if name == intern("add") => int::add(a1, a2),
         [a1, a2] if name == intern("mul") => int::mul(a1, a2),
         [a1, a2] if name == intern("le") => int::le(a1, a2),
@@ -149,6 +157,8 @@ pub fn run_builtin<'b>(
 
         [a1, a2] if name == intern("ptradd") => ptr::ptradd(a1, a2),
         [a1, a2] if name == intern("ptrdiff") => ptr::ptrdiff(a1, a2),
+
+        [a1, a2] if name == intern("eq") => specs::eq(a1, a2),
         _ => panic!(
             "Builtin {name} does not exist or can not be called with {} args!",
             args.len()

@@ -3,15 +3,18 @@ use std::{
     fmt::{Debug, Display},
     mem,
     ops::{BitAnd, BitOr, BitXor, Not},
-    rc::Rc,
 };
 
 use crate::{
     ownership::OwnershipPredicate,
-    specs::exec::{
-        self, ExecCtx, ExecLocalCtx, InfPointer,
-        monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
-        pointer_origin::PointerOrigin,
+    specs::{
+        InfPointer,
+        exec::{
+            ExecCtx, ExecLocalCtx,
+            monad::{MonadFailMode, MonadOwnershipArg, SpecMonad},
+            pointer_origin::PointerOrigin,
+        },
+        values,
     },
     utils::{
         SwitchToDisplay,
@@ -204,35 +207,35 @@ impl Value {
     }
 }
 
-pub fn value_to_value(value: Value, provenance: impl Fn() -> PointerOrigin) -> Rc<exec::Value> {
-    Rc::new(match value {
-        Value::Int(i) => exec::Value::InductiveVal {
-            ty: intern("Val"),
-            constr: intern("Int"),
-            args: vec![Rc::new(exec::Value::NumValue(i.into()))],
-        },
-        Value::Loc(Pointer(blk, off)) => exec::Value::InductiveVal {
-            ty: intern("Val"),
-            constr: intern("Ptr"),
-            args: vec![Rc::new(exec::Value::InductiveVal {
-                ty: intern("Option"),
-                constr: intern("Some"),
-                args: vec![Rc::new(exec::Value::PtrValue(
-                    InfPointer(blk, off.into()),
+pub fn value_to_value(value: Value, provenance: impl Fn() -> PointerOrigin) -> values::Value {
+    match value {
+        Value::Int(i) => values::Value::inductive(
+            intern("Val"),
+            intern("Int"),
+            vec![values::Value::num_value(&i.into())],
+        ),
+        Value::Loc(Pointer(blk, off)) => values::Value::inductive(
+            intern("Val"),
+            intern("Ptr"),
+            vec![values::Value::inductive(
+                intern("Option"),
+                intern("Some"),
+                vec![values::Value::ptr_value(
+                    &InfPointer(blk, off.into()),
                     provenance(),
-                ))],
-            })],
-        },
-        Value::NullPointer => exec::Value::InductiveVal {
-            ty: intern("Val"),
-            constr: intern("Ptr"),
-            args: vec![Rc::new(exec::Value::InductiveVal {
-                ty: intern("Option"),
-                constr: intern("None"),
-                args: vec![],
-            })],
-        },
-    })
+                )],
+            )],
+        ),
+        Value::NullPointer => values::Value::inductive(
+            intern("Val"),
+            intern("Ptr"),
+            vec![values::Value::inductive(
+                intern("Option"),
+                intern("None"),
+                vec![],
+            )],
+        ),
+    }
 }
 
 impl CallFrame {
@@ -436,6 +439,7 @@ impl MachineState {
                     };
 
                     if let Some(spec) = &cur_func.spec {
+                        // println!("Returning from {}", old_frame.function);
                         let spec = old_frame.execute_leave_spec(
                             &mut cf.spec_stuff.1,
                             &self.specs_stuff,
@@ -443,6 +447,8 @@ impl MachineState {
                             &self.memory,
                             rv.clone(),
                         );
+                        // println!("Returned from {}", old_frame.function);
+                        // println!("In new frame, we have:\n{}", cf.spec_stuff.1);
 
                         if let Err(e) = spec {
                             panic!("Postcondition of {} violated: {:?}", old_frame.function, e);
@@ -492,6 +498,7 @@ impl MachineState {
                         ncf.locals.insert(idx, arg);
                     }
                     if let Some(spec) = &new_func.spec {
+                        // println!("Calling {} with args {:?}", ncf.function, newargs);
                         let spec = ncf.execute_enter_spec(
                             &mut cf.spec_stuff.1,
                             &self.specs_stuff,
@@ -499,6 +506,7 @@ impl MachineState {
                             newargs,
                             &self.memory,
                         );
+                        // println!("Called {}", ncf.function);
                         if let Err(e) = spec {
                             panic!("Precondition of {} violated: {:?}", ncf.function, e);
                         }

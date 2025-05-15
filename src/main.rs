@@ -1,6 +1,7 @@
 #![feature(hash_raw_entry)]
 #![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(unsigned_signed_diff)]
+#![feature(mapped_lock_guards)]
 
 use std::env;
 

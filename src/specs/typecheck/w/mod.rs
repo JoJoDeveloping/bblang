@@ -282,7 +282,7 @@ impl<'a> LocalCtx<'a> {
             res.push(ConstDef {
                 name,
                 ty,
-                value: Box::new(value),
+                value: value,
             });
         }
         Ok(res)

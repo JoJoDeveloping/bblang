@@ -7,7 +7,7 @@ use crate::{
     parse::Span,
     specs::{
         checked_ast::{
-            expr::{ConstDef, Expr, MatchArm},
+            expr::{ConstDef, Expr, ExprBox, MatchArm, SemiCheckedExpr},
             types::{Builtin, Generics, PolyType, Type},
         },
         source_ast::{SourceConstDef, SourceExpr, SourceExprBox},
@@ -29,7 +29,7 @@ impl<'a> LocalCtx<'a> {
         should_ty: Rc<Type>,
         globals: &mut GlobalCtx,
         bound: SourceExprBox,
-    ) -> Result<(PolyType, Expr)> {
+    ) -> Result<(PolyType, SemiCheckedExpr)> {
         let lctx = self;
         let (ty, expr_bound) = lctx.check_expr(globals, bound)?;
         globals
@@ -72,8 +72,8 @@ impl<'a> LocalCtx<'a> {
         &'a self,
         globals: &mut GlobalCtx,
         inexpr: SourceExprBox,
-    ) -> Result<(Rc<Type>, Expr)> {
-        Ok(match inexpr.0 {
+    ) -> Result<(Rc<Type>, SemiCheckedExpr)> {
+        let res: Result<(_, Expr<Rc<Type>, Box<SemiCheckedExpr>>)> = Ok(match inexpr.0 {
             SourceExpr::Var(istr) => {
                 if let Some(x) = self.lookup_ident(istr) {
                     (
@@ -124,14 +124,19 @@ impl<'a> LocalCtx<'a> {
                          lctx: &LocalCtx<'_>,
                          should_ty: Rc<Type>,
                          globals: &mut GlobalCtx|
-                 -> Result<(Rc<Type>, Expr)> {
+                 -> Result<(Rc<Type>, SemiCheckedExpr)> {
                     let (polyty, expr_bound) =
                         lctx.check_let(inexpr.1, gen2, should_ty, globals, bound)?;
                     let lctx = self.push_vars([(istr, polyty.clone())].into_iter().collect());
                     let (ty3, rest) = lctx.check_expr(globals, rest)?;
                     Ok((
                         ty3,
-                        Expr::Let(istr, Box::new(polyty), Box::new(expr_bound), Box::new(rest)),
+                        SemiCheckedExpr::new(Expr::Let(
+                            istr,
+                            Box::new(polyty),
+                            Box::new(expr_bound),
+                            Box::new(rest),
+                        )),
                     ))
                 };
                 return match ty {
@@ -277,7 +282,7 @@ impl<'a> LocalCtx<'a> {
                 if arms.len() != ind.constrs.len() {
                     return Err((TypeError::MatchError(), inexpr.1));
                 }
-                let mut new_arms = HashMap::new();
+                let mut new_arms: HashMap<IStr, MatchArm<Box<SemiCheckedExpr>>> = HashMap::new();
                 for (constr, arm) in arms {
                     assert_eq!(arm.constr, constr);
                     let constr = ind
@@ -310,8 +315,13 @@ impl<'a> LocalCtx<'a> {
                     );
                 }
                 (
-                    res_ty,
-                    Expr::IndMatch(Box::new(discriminee), ind.name, new_arms),
+                    res_ty.clone(),
+                    Expr::IndMatch::<Rc<Type>, Box<SemiCheckedExpr>>(
+                        Box::new(discriminee),
+                        ind.name,
+                        res_ty,
+                        new_arms,
+                    ),
                 )
             }
             SourceExpr::NumLiteral(x) => (Rc::new(Type::Builtin(Builtin::Int)), Expr::NumConst(x)),
@@ -332,74 +342,108 @@ impl<'a> LocalCtx<'a> {
                 let (ty, body) = new_self.check_expr(globals, body)?;
                 (ty, Expr::PredicateBox(name, bound, Box::new(body)))
             }
-        })
+        });
+        res.map(|(x, y)| (x, SemiCheckedExpr::new(y)))
     }
 
     pub fn check_constant(
         &'a self,
         globals: &mut GlobalCtx,
         cnst: SourceConstDef,
-    ) -> Result<(PolyType, IStr, Expr)> {
+    ) -> Result<(PolyType, IStr, ExprBox)> {
         let lctx = self;
 
         let st = cnst.ty;
         let (gen2, lctx) = lctx.enter_generics(cnst.pos, globals, st.binders)?;
         let should_ty = lctx.check_type(globals, st.ty)?;
-        let (mut ty, mut value) =
+        let (mut ty, value) =
             lctx.check_let(cnst.pos, Some(gen2), should_ty, globals, cnst.value)?;
         let polytybinders = ty.binders.names.iter().map(|x| x.0).collect();
-        globals.resolve_expr_fully(&mut value, &polytybinders);
+        let value = globals.resolve_expr_fully(value, &polytybinders);
         globals.resolve_ty_fully(&mut ty.ty, &polytybinders);
         Ok((ty, cnst.name, value))
     }
 }
 
 impl GlobalCtx {
-    pub fn resolve_expr_fully(&self, expr: &mut Expr, allowed_free_vars: &HashSet<TypeVar>) {
-        match expr {
-            Expr::Var(_) => (),
-            Expr::Lambda(_, _, body) => {
-                self.resolve_expr_fully(body, allowed_free_vars);
+    pub fn resolve_expr_fully(
+        &self,
+        expr: SemiCheckedExpr,
+        allowed_free_vars: &HashSet<TypeVar>,
+    ) -> ExprBox {
+        ExprBox::new(match expr.into() {
+            Expr::Var(i) => Expr::Var(i),
+            Expr::Lambda(i1, i2, body) => {
+                Expr::Lambda(i1, i2, self.resolve_expr_fully(*body, allowed_free_vars))
             }
-            Expr::App(expr1, expr2) => {
-                self.resolve_expr_fully(expr1, allowed_free_vars);
-                self.resolve_expr_fully(expr2, allowed_free_vars);
-            }
-            Expr::Let(_, ty, expr1, expr2) => {
+            Expr::App(expr1, expr2) => Expr::App(
+                self.resolve_expr_fully(*expr1, allowed_free_vars),
+                self.resolve_expr_fully(*expr2, allowed_free_vars),
+            ),
+            Expr::Let(n, mut ty, expr1, expr2) => {
                 let mut new_fvs = allowed_free_vars.clone();
                 ty.binders.names.iter().for_each(|(x, _)| {
                     new_fvs.insert(*x);
                 });
                 self.resolve_ty_fully(&mut ty.ty, &new_fvs);
-                self.resolve_expr_fully(expr1, &new_fvs);
-                self.resolve_expr_fully(expr2, allowed_free_vars);
+                let expr1 = self.resolve_expr_fully(*expr1, &new_fvs);
+                let expr2 = self.resolve_expr_fully(*expr2, allowed_free_vars);
+                Expr::Let(
+                    n,
+                    Box::new(PolyType {
+                        binders: ty.binders,
+                        ty: (),
+                    }),
+                    expr1,
+                    expr2,
+                )
             }
-            Expr::IndConst(_, _, tys, exprs) => {
-                exprs
-                    .iter_mut()
-                    .for_each(|e| self.resolve_expr_fully(e, allowed_free_vars));
+            Expr::IndConst(s1, s2, mut tys, exprs) => {
+                let exprs = exprs
+                    .into_iter()
+                    .map(|e| self.resolve_expr_fully(*e, allowed_free_vars))
+                    .collect();
                 tys.iter_mut()
                     .for_each(|t| self.resolve_ty_fully(t, allowed_free_vars));
+                Expr::IndConst(s1, s2, vec![], exprs)
             }
-            Expr::IndMatch(_, _, rows) => {
-                rows.iter_mut().for_each(|(_, arm)| {
-                    self.resolve_expr_fully(&mut *arm.expr, allowed_free_vars)
-                });
+            Expr::IndMatch(e1, s1, mut resty, rows) => {
+                let rows = rows
+                    .into_iter()
+                    .map(|(k, MatchArm { constr, vars, expr })| {
+                        (
+                            k,
+                            MatchArm {
+                                constr,
+                                vars,
+                                expr: self.resolve_expr_fully(*expr, allowed_free_vars),
+                            },
+                        )
+                    })
+                    .collect();
+                let e1 = self.resolve_expr_fully(*e1, allowed_free_vars);
+                self.resolve_ty_fully(&mut resty, allowed_free_vars);
+                Expr::IndMatch(e1, s1, (), rows)
             }
-            Expr::NumConst(_) => {}
-            Expr::Builtin(_, exprs) => {
-                exprs
-                    .iter_mut()
-                    .for_each(|e| self.resolve_expr_fully(e, allowed_free_vars));
+            Expr::NumConst(x) => Expr::NumConst(x),
+            Expr::Builtin(v, exprs) => {
+                let exprs = exprs
+                    .into_iter()
+                    .map(|e| self.resolve_expr_fully(*e, allowed_free_vars))
+                    .collect();
+                Expr::Builtin(v, exprs)
             }
-            Expr::PredicateBox(_, _, b) => self.resolve_expr_fully(b, allowed_free_vars),
-        }
+            Expr::PredicateBox(n, a, b) => {
+                Expr::PredicateBox(n, a, self.resolve_expr_fully(*b, allowed_free_vars))
+            }
+        })
     }
 
     pub fn resolve_ty_fully(&self, ty: &mut Rc<Type>, allowed_free_vars: &HashSet<TypeVar>) {
         for ele in (*ty).fvs(&self.subst) {
             if !allowed_free_vars.contains(&ele) {
                 eprintln!("Type variable {ele:?} is free/unresolved!");
+                panic!() // todo should be a type error
             }
         }
         *ty = Rc::new(self.subst.resolve_fully(&*ty))
@@ -412,10 +456,6 @@ impl GlobalCtx {
         if let Some(_) = self.global_defs.insert(name, ty.clone()) {
             return Err((TypeError::DuplicateGlobal(name), pos));
         }
-        Ok(ConstDef {
-            name,
-            ty,
-            value: Box::new(value),
-        })
+        Ok(ConstDef { name, ty, value })
     }
 }

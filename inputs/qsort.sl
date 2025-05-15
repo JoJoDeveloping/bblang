@@ -11,7 +11,7 @@ spec
                 end
     end
 
-    def eqintlist : List<int> -> List<int> -> Bool = eqlist eqint
+    def eqintlist : List<int> -> List<int> -> Bool = eq
 
     def splitpivot : int -> List<int> -> Pair<List<int>, List<int>> = fun pivot => rec split lst => match lst : List with
         Nil => Pair::Pair(List::Nil, List::Nil)
@@ -143,5 +143,5 @@ end = cons(72, cons(101, cons(108, cons(108, cons(111, cons(44, cons(32, cons(87
 
 fun main() spec pre: ; post: end =
     printall(verylonglist());
-    printall(qsort(verylonglist()));
+    //printall(qsort(verylonglist()));
     42

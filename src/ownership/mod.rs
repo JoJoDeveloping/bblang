@@ -1,18 +1,18 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
-    rc::Rc,
 };
 
 use num_bigint::BigInt;
-use predicate_arg::PredArg;
 
 use crate::{
-    specs::exec::{InfPointer, Value, pointer_origin::PointerOrigins},
+    specs::{
+        InfPointer,
+        exec::pointer_origin::PointerOrigins,
+        values::{Value, pred_arg::PredArg},
+    },
     utils::{disjount_extend::DisjointExtend, indent, string_interner::IStr},
 };
-
-pub mod predicate_arg;
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub struct PredicateName {
@@ -22,7 +22,7 @@ pub struct PredicateName {
 
 #[derive(Debug)]
 pub struct OwnershipPredicate {
-    output_param: Rc<Value>,
+    output_param: Value,
     owned_preds: HashMap<PredicateName, OwnershipPredicate>,
     raw_owned: RawOwnershipInfo,
     unfold_actions: HashMap<InfPointer, HashSet<PredicateName>>,
@@ -88,18 +88,18 @@ impl DisjointExtend for RawOwnershipInfo {
 impl OwnershipPredicate {
     pub fn new() -> Self {
         Self {
-            output_param: Rc::new(Value::NumValue(BigInt::ZERO)),
+            output_param: Value::num_value(&BigInt::ZERO),
             owned_preds: HashMap::new(),
             raw_owned: RawOwnershipInfo::new(),
             unfold_actions: HashMap::new(),
         }
     }
 
-    pub fn set_output(&mut self, output: Rc<Value>) {
+    pub fn set_output(&mut self, output: Value) {
         self.output_param = output;
     }
 
-    pub fn output(&self) -> Rc<Value> {
+    pub fn output(&self) -> Value {
         self.output_param.clone()
     }
 
@@ -167,7 +167,7 @@ impl OwnershipPredicate {
         false
     }
 
-    pub fn lookup_predicate(&mut self, name: &PredicateName) -> Option<(OwnershipPredicate)> {
+    pub fn lookup_predicate(&mut self, name: &PredicateName) -> Option<OwnershipPredicate> {
         let res = self.owned_preds.remove(name);
         if res.is_some() {
             self.unfold_actions.iter_mut().for_each(|(_, vs)| {

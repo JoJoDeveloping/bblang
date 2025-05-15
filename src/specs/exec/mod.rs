@@ -1,50 +1,27 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Display, Write},
-    mem,
-    ops::Deref,
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
-use monad::{MonadArg, MonadOwnershipArg, SpecMonad};
-use num_bigint::BigInt;
-use pointer_origin::{PointerOrigin, PointerOrigins};
+use std::fmt::Write;
+
+use monad::{MonadArg, SpecMonad};
+use pointer_origin::PointerOrigins;
 
 use crate::{
-    ownership::{OwnershipPredicate, PredicateName, predicate_arg::PredArg},
-    utils::{disjount_extend::DisjointExtend, string_interner::IStr},
+    ownership::{OwnershipPredicate, PredicateName},
+    specs::values::pred_arg::PredArg,
+    utils::string_interner::IStr,
 };
 
 use super::{
     builtin::{populate_exec_builtins, run_builtin},
-    checked_ast::expr::{ConstDef, Expr},
+    checked_ast::expr::{ConstDef, Expr, ExprBox},
+    values::Value,
 };
 
 pub mod monad;
 pub mod pointer_origin;
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct InfPointer(pub u32, pub BigInt);
-
-#[derive(Clone, Debug)]
-pub enum Value {
-    InductiveVal {
-        ty: IStr,
-        constr: IStr,
-        args: Vec<Rc<Value>>,
-    },
-    Lambda {
-        rec: Option<IStr>,
-        arg: IStr,
-        body: Box<Expr>,
-        captures: HashMap<IStr, Rc<Value>>,
-    },
-    NumValue(BigInt),
-    PtrValue(InfPointer, PointerOrigin),
-}
 #[derive(Debug)]
 pub struct ExecCtx {
-    pub globals: HashMap<IStr, Rc<Value>>,
+    pub globals: HashMap<IStr, Value>,
     pub globals_order: Vec<IStr>,
 }
 
@@ -84,18 +61,18 @@ impl ExecCtx {
 #[derive(Debug)]
 pub struct ExecLocalCtx<'a> {
     pub parent: Option<&'a ExecLocalCtx<'a>>,
-    pub bindings: HashMap<IStr, Rc<Value>>,
+    pub bindings: HashMap<IStr, Value>,
 }
 
 impl<'a> ExecLocalCtx<'a> {
-    fn lookup(&self, name: IStr) -> Option<Rc<Value>> {
+    fn lookup(&self, name: IStr) -> Option<Value> {
         self.bindings
             .get(&name)
             .cloned()
             .or_else(|| self.parent.and_then(|p| p.lookup(name)))
     }
 
-    fn push(&'a self, bindings: HashMap<IStr, Rc<Value>>) -> Self {
+    fn push(&'a self, bindings: HashMap<IStr, Value>) -> Self {
         Self {
             parent: Some(self),
             bindings,
@@ -109,7 +86,7 @@ impl<'a> ExecLocalCtx<'a> {
         }
     }
 
-    fn lookup_var(&self, globals: &ExecCtx, istr: IStr) -> Rc<Value> {
+    fn lookup_var(&self, globals: &ExecCtx, istr: IStr) -> Value {
         match self.lookup(istr) {
             Some(k) => k,
             None => globals.globals.get(&istr).unwrap().clone(),
@@ -121,31 +98,27 @@ impl<'a> ExecLocalCtx<'a> {
         globals: &ExecCtx,
         monad: &'x mut MonadArg<'b>,
         expr: &Expr,
-    ) -> SpecMonad<Rc<Value>> {
+    ) -> SpecMonad<Value> {
         Ok(match expr {
             Expr::Var(istr) => self.lookup_var(globals, *istr),
-            Expr::Lambda(rec, arg, body) => Rc::new(Value::Lambda {
-                rec: *rec,
-                arg: *arg,
-                body: body.clone(),
-                captures: self.capture_environment(body),
-            }),
+            Expr::Lambda(rec, arg, body) => {
+                Value::closure(*rec, *arg, body.clone(), self.capture_environment(body))
+            }
             Expr::App(fun, arge) => {
                 let fun = self.exec(globals, monad, fun)?;
-                let Value::Lambda {
-                    rec,
-                    arg,
-                    body,
-                    mut captures,
-                } = (*fun).clone()
-                else {
+                let Some((rec, arg, body, mut captures)) = fun.as_closure() else {
                     panic!("apply to non-function!")
                 };
+
+                let body2 = body.clone();
+                drop(body);
+                let body = body2;
+
                 let argv = self.exec(globals, monad, arge)?;
                 captures.insert(arg, argv.clone());
                 if let Some(rec) = rec {
                     // println!("Evaluating recursive call to {rec} with arg {argv}");
-                    captures.insert(rec, fun);
+                    captures.insert(rec, fun.clone());
                 }
                 let subscope = self.push(captures);
                 subscope.exec(globals, monad, &body)?
@@ -156,33 +129,28 @@ impl<'a> ExecLocalCtx<'a> {
                 subscope.insert(*var, bound);
                 self.push(subscope).exec(globals, monad, expr)?
             }
-            Expr::IndConst(ty, constr, _, args) => Rc::new(Value::InductiveVal {
-                ty: *ty,
-                constr: *constr,
-                args: args
-                    .iter()
+            Expr::IndConst(ty, constr, _, args) => Value::inductive(
+                *ty,
+                *constr,
+                args.iter()
                     .map(|e| self.exec(globals, monad, e))
                     .collect::<SpecMonad<Vec<_>>>()?,
-            }),
-            Expr::IndMatch(discrimnee, _, arms) => {
-                let Value::InductiveVal {
-                    ty: _,
-                    constr,
-                    args,
-                } = &*self.exec(globals, monad, &discrimnee)?
+            ),
+            Expr::IndMatch(discrimnee, _, _, arms) => {
+                let Some((_, constr, args)) =
+                    self.exec(globals, monad, &discrimnee)?.as_inductive()
                 else {
                     panic!()
                 };
-                let arm = arms.get(constr).unwrap();
-                assert_eq!(args.len(), arm.vars.len());
-                let substi = arm.vars.iter().copied().zip(args.iter().cloned()).collect();
+                let arm = arms.get(&constr).unwrap();
+                let substi = arm.vars.iter().copied().zip(args).collect();
                 self.push(substi).exec(globals, monad, &arm.expr)?
             }
-            Expr::NumConst(x) => Rc::new(Value::NumValue(x.clone())),
+            Expr::NumConst(x) => Value::num_value(x),
             Expr::Builtin(name, args) => {
                 let args: Vec<_> = args
                     .iter()
-                    .map(|x: &Box<Expr>| self.exec(globals, monad, x))
+                    .map(|x: &ExprBox| self.exec(globals, monad, x))
                     .collect::<SpecMonad<Vec<_>>>()?;
                 return run_builtin(*name, args, monad);
             }
@@ -193,12 +161,12 @@ impl<'a> ExecLocalCtx<'a> {
                 for &arg_name in args {
                     let arg = self.lookup_var(globals, arg_name);
                     write!(str, "{arg}, ").unwrap();
-                    let arg = PredArg::from_value_inner(arg.deref(), &mut origins).unwrap();
+                    let arg = PredArg::from_value_inner(arg, &mut origins).unwrap();
                     pred_args.push(arg);
                 }
                 // println!("Starting to build predicate {name}({str}) with origins {origins:?}!");
 
-                // let origins_str = format!("{origins:?}");
+                let origins_str = format!("{origins:?}");
 
                 let res = if let Some(monad) = monad {
                     let name = PredicateName::new(*name, pred_args);
@@ -207,10 +175,10 @@ impl<'a> ExecLocalCtx<'a> {
                     //     monad.extract_from
                     // );
                     let mut pred = if let Some(x) = monad.extract_from.lookup_predicate(&name) {
-                        // println!("Predicate could be extracted!");
+                        // println!("Predicate {name} could be extracted!");
                         x
                     } else {
-                        // println!("Predicate could not be extracted, building {name} for real!");
+                        // println!("Predicate {name} could not be extracted, building it for real!");
                         let mut newpred = OwnershipPredicate::new();
                         let newmonad = monad.with_new_into(&mut newpred);
                         let res = self.exec(globals, &mut Some(newmonad), body)?;
@@ -234,14 +202,14 @@ impl<'a> ExecLocalCtx<'a> {
         })
     }
 
-    fn capture_environment(&self, expr: &Expr) -> HashMap<IStr, Rc<Value>> {
+    fn capture_environment(&self, expr: &Expr) -> HashMap<IStr, Value> {
         expr.free_vars()
             .into_iter()
             .filter_map(|x| self.lookup(x).map(|y| (x, y)))
             .collect()
     }
 
-    pub fn push_arg(&mut self, name: IStr, arg: Rc<Value>) {
+    pub fn push_arg(&mut self, name: IStr, arg: Value) {
         self.bindings.insert(name, arg);
     }
 
@@ -296,7 +264,7 @@ impl Expr {
                 }
                 res
             }
-            Expr::IndMatch(expr, _, arms) => {
+            Expr::IndMatch(expr, _, _, arms) => {
                 let mut res = expr.free_vars();
                 for arm in arms {
                     let mut sub = arm.1.expr.free_vars();
@@ -311,35 +279,6 @@ impl Expr {
             }
             Expr::NumConst(_) => HashSet::new(),
             Expr::PredicateBox(_, _, body) => body.free_vars(),
-        }
-    }
-}
-
-impl Display for InfPointer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.0, self.1)
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::InductiveVal { ty, constr, args } => {
-                write!(f, "{ty}::{constr}(")?;
-                let mut comma = false;
-                for v in args {
-                    if comma {
-                        write!(f, ", ")?
-                    } else {
-                        comma = true
-                    }
-                    v.fmt(f)?;
-                }
-                write!(f, ")")
-            }
-            Value::Lambda { .. } => write!(f, "fn"),
-            Value::NumValue(x) => Display::fmt(x, f),
-            Value::PtrValue(x, _) => Display::fmt(x, f),
         }
     }
 }

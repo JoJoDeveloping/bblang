@@ -17,6 +17,8 @@ def le  : int -> int -> Bool
 def bitand : int -> int -> int
 def neg : int -> int
 
+def eq : forall A, A -> A -> Bool
+
 def Owned : ptr -> Val
 def Block : ptr -> int -> Unit
 def Fail : Bool -> Empty
@@ -28,7 +30,7 @@ def ptrdiff : ptr -> ptr -> Option<int>
 def and : Bool -> Bool -> Bool = fun a : Bool => fun b => match a with True => b | False => Bool::False end
 
 def sub : int -> int -> int = fun a => fun b => add a (mul b (neg 1))
-def eqint : int -> int -> Bool = fun a => fun b => and (le a b) (le b a)
+def eqint : int -> int -> Bool = eq
 
 def fail : forall A, Unit -> A = fun b => match Fail Bool::True with end
 def fail_flipped : forall A, Unit -> A = fun b => match Fail Bool::False with end
@@ -41,10 +43,7 @@ def assert : Bool -> int = fun b => match b : Bool with True => 0 | False => fai
 def not : Bool -> Bool = fun a => match a : Bool with
     True => Bool::False | False => Bool::True end
 
-def eqbool : Bool -> Bool -> Bool = fun a => fun b =>
-    match a : Bool with
-        True => b
-      | False => not b end
+def eqbool : Bool -> Bool -> Bool = eq
 
 def asbool : Val -> Bool = fun n => not (eqint (asint n) 0)
 
@@ -53,9 +52,7 @@ def isempty : forall A, List<A> -> Bool = fun a => match a : List with Nil => Bo
 def fst : forall A B, Pair<A, B> -> A = fun a => match a : Pair with Pair(a,b) => a end
 def snd : forall A B, Pair<A, B> -> B = fun a => match a : Pair with Pair(a,b) => b end
 
-def eqptr : ptr -> ptr -> Bool = fun a => fun b => match ptrdiff a b with
-  None => Bool::False
-| Some(x) => eqint x 0 end
+def eqptr : ptr -> ptr -> Bool = eq
 
 
 def eqoption : forall A, (A -> A -> Bool) -> Option<A> -> Option<A> -> Bool = fun eqa => fun a => fun b => match a : Option with None => match b : Option with None => Bool::True | Some(x) => Bool::False end

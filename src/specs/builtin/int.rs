@@ -1,47 +1,46 @@
-use std::rc::Rc;
+use crate::{specs::values::Value, utils::string_interner::intern};
 
-use crate::{specs::exec::Value, utils::string_interner::intern};
-
-pub fn add(v1: &Rc<Value>, v2: &Rc<Value>) -> Rc<Value> {
-    match (&**v1, &**v2) {
-        (Value::NumValue(n1), Value::NumValue(n2)) => Rc::new(Value::NumValue(n1.clone() + n2)),
+pub fn add(v1: &Value, v2: &Value) -> Value {
+    Value::num_value(&match (v1.as_int(), v2.as_int()) {
+        (Some(n1), Some(n2)) => n1.clone() + &*n2,
         _ => panic!("Illegal call to add!"),
-    }
+    })
 }
 
-pub fn mul(v1: &Rc<Value>, v2: &Rc<Value>) -> Rc<Value> {
-    match (&**v1, &**v2) {
-        (Value::NumValue(n1), Value::NumValue(n2)) => Rc::new(Value::NumValue(n1.clone() * n2)),
+pub fn mul(v1: &Value, v2: &Value) -> Value {
+    Value::num_value(&match (v1.as_int(), v2.as_int()) {
+        (Some(n1), Some(n2)) => n1.clone() * &*n2,
         _ => panic!("Illegal call to mul!"),
-    }
+    })
 }
 
-pub fn le(v1: &Rc<Value>, v2: &Rc<Value>) -> Rc<Value> {
-    match (&**v1, &**v2) {
-        (Value::NumValue(n1), Value::NumValue(n2)) if n1 <= n2 => Rc::new(Value::InductiveVal {
-            ty: intern("Bool"),
-            constr: intern("True"),
-            args: vec![],
-        }),
-        (Value::NumValue(_), Value::NumValue(_)) => Rc::new(Value::InductiveVal {
-            ty: intern("Bool"),
-            constr: intern("False"),
-            args: vec![],
-        }),
-        _ => panic!("Illegal call to le!"),
-    }
+pub fn le(v1: &Value, v2: &Value) -> Value {
+    Value::inductive(
+        intern("Bool"),
+        match (v1.as_int(), v2.as_int()) {
+            (Some(n1), Some(n2)) => {
+                if *n1 <= *n2 {
+                    intern("True")
+                } else {
+                    intern("False")
+                }
+            }
+            _ => panic!("Illegal call to le!"),
+        },
+        vec![],
+    )
 }
 
-pub fn neg(v1: &Rc<Value>) -> Rc<Value> {
-    match &**v1 {
-        Value::NumValue(n1) => Rc::new(Value::NumValue(-n1)),
+pub fn neg(v1: &Value) -> Value {
+    Value::num_value(&match v1.as_int() {
+        Some(n1) => -(n1.clone()),
         _ => panic!("Illegal call to neg!"),
-    }
+    })
 }
 
-pub fn bitand(v1: &Rc<Value>, v2: &Rc<Value>) -> Rc<Value> {
-    match (&**v1, &**v2) {
-        (Value::NumValue(n1), Value::NumValue(n2)) => Rc::new(Value::NumValue(n1.clone() & n2)),
+pub fn bitand(v1: &Value, v2: &Value) -> Value {
+    Value::num_value(&match (v1.as_int(), v2.as_int()) {
+        (Some(n1), Some(n2)) => n1.clone() & &*n2,
         _ => panic!("Illegal call to bitand!"),
-    }
+    })
 }
